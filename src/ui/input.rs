@@ -265,13 +265,14 @@ impl InputEditor {
                     return None;
                 }
                 let text = self.buffer.clone();
-                if !text.is_empty() {
+                let is_blank = text.trim().is_empty();
+                if !is_blank {
                     self.history.push(text.clone());
                 }
                 self.history_pos = None;
                 self.buffer.clear();
                 self.cursor = 0;
-                if text.is_empty() { None } else { Some(text) }
+                if is_blank { None } else { Some(text) }
             }
             KeyCode::Char(c)
                 if c == '\x08' || (c == 'h' && key.modifiers.contains(KeyModifiers::CONTROL)) =>
