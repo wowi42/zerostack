@@ -68,9 +68,10 @@ pub async fn build_agent_inner<M: CompletionModel + 'static>(
     if cli.resolve_no_tools(cfg) {
         builder.build()
     } else {
+        let max_text_file_size = cfg.max_text_file_size;
         let base_tools: Vec<Box<dyn rig::tool::ToolDyn>> = vec![
-            Box::new(tools::ReadTool::new(permission.clone(), ask_tx.clone())),
-            Box::new(tools::WriteTool::new(permission.clone(), ask_tx.clone())),
+            Box::new(tools::ReadTool::new(permission.clone(), ask_tx.clone(), max_text_file_size)),
+            Box::new(tools::WriteTool::new(permission.clone(), ask_tx.clone(), max_text_file_size)),
             Box::new(tools::EditTool::new(permission.clone(), ask_tx.clone())),
             Box::new(tools::BashTool::new(
                 permission.clone(),

@@ -68,6 +68,8 @@ pub struct Config {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_agent_turns: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_text_file_size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub compact_enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_providers: Option<HashMap<String, CustomProviderConfig>>,
