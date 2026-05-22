@@ -39,7 +39,9 @@ cargo install zerostack
 cargo install zerostack --features acp
 ```
 
-You are now ready to work with a lightweight coding agent! (Note: you can also find pre-built binaries on Github Releases)
+You are now ready to work with a lightweight coding agent! (You can also find pre-built binaries on Github Releases)
+
+*note:* If you have questions or you want to collaborate on the project, please join the [dedicated Matrix chatroom](https://app.element.io/#/room/#zerostack-general:matrix.org).
 
 ### Optional: sandbox mode
 
