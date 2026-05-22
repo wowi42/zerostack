@@ -37,7 +37,7 @@ impl StatusLine {
         let cost_str = if session.total_cost > 0.0 {
             format!(" ${:.4}", session.total_cost)
         } else {
-            String::new()
+            " $0.00".to_string()
         };
 
         let compact_badge = if session.compactions.is_empty() {
