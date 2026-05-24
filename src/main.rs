@@ -3,6 +3,7 @@ mod auth;
 mod cli;
 mod config;
 mod context;
+mod docs;
 mod event;
 mod extras;
 mod permission;
@@ -84,6 +85,7 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    let _ = docs::ensure_global();
     let mut context = context::load(cli.resolve_no_context_files(&cfg));
 
     let default_prompt = cfg.default_prompt.as_deref().unwrap_or("code");
