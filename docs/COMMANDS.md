@@ -81,6 +81,7 @@ You are in read-only mode. Only read files and explore.
 | `/editsys` | Show the current edit system mode (similarity or hashedit). |
 | `/editsys similarity` | Use SEARCH/REPLACE with fuzzy matching for edits (default). |
 | `/editsys hashedit` | Use CRC-32 tag-based edits (token-efficient, CAS-guarded). |
+| `/btw <message>` | Ask the agent a question without adding it to the chat history. Neither the question nor the response is saved. |
 | `/reasoning` | Toggle LLM reasoning on/off (requires model support). |
 | `/thinking` | Alias for `/reasoning`. |
 | `/toggle` | Show available toggleable features. |

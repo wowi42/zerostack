@@ -223,6 +223,7 @@ pub async fn run_interactive(
     let mut loop_state: Option<crate::extras::r#loop::LoopState> = None;
     #[cfg(feature = "git-worktree")]
     let mut wt_return_path: Option<String> = None;
+    let mut btw_active = false;
 
     let perm_mode = || -> Option<String> {
         permission.as_ref().map(|p| {
@@ -490,7 +491,30 @@ pub async fn run_interactive(
                                 renderer.write_line("", Color::White)?;
                                 #[cfg(feature = "mcp")]
                                 let mcp_ref = ensure_mcp_manager(&mut mcp_manager, cfg).await;
-                                let result = handle_slash(&text, &mut agent, &mut client, &mut renderer, session, cli, cfg, context, &mut show_reasoning, &mut reasoning_enabled, &mut is_running, &mut input, &permission, &ask_tx, &mut todo_tools_enabled, &sandbox, #[cfg(feature = "loop")] &mut loop_state, #[cfg(feature = "mcp")] mcp_ref).await;
+                                let result = if text.starts_with("/btw") {
+                                    let btw_text = text.strip_prefix("/btw").map(|s| s.trim()).unwrap_or("");
+                                    if btw_text.is_empty() {
+                                        renderer.write_line("usage: /btw <message>", C_AGENT)?;
+                                        Ok(())
+                                    } else {
+                                        ensure_agent(
+                                            &mut agent, &client, session, cli, cfg, context,
+                                            &permission, &ask_tx, &sandbox, reasoning_enabled,
+                                            #[cfg(feature = "mcp")] mcp_ref,
+                                        ).await;
+                                        let history = crate::agent::runner::convert_history(session);
+                                        let runner = agent.as_ref().unwrap().clone().spawn_runner(
+                                            btw_text.to_string(),
+                                            history,
+                                        );
+                                        agent_rx = Some(runner.event_rx);
+                                        is_running = true;
+                                        btw_active = true;
+                                        Ok(())
+                                    }
+                                } else {
+                                    handle_slash(&text, &mut agent, &mut client, &mut renderer, session, cli, cfg, context, &mut show_reasoning, &mut reasoning_enabled, &mut is_running, &mut input, &permission, &ask_tx, &mut todo_tools_enabled, &sandbox, #[cfg(feature = "loop")] &mut loop_state, #[cfg(feature = "mcp")] mcp_ref).await
+                                };
                                 match result {
                                 Err(e) if e.to_string().starts_with("DEFER_COMPRESS:") => {
                                     let err_msg = e.to_string();
@@ -701,6 +725,13 @@ pub async fn run_interactive(
                     #[cfg(feature = "git-worktree")] &mut wt_return_path,
                     #[cfg(feature = "mcp")] mcp_ref,
                 ).await?;
+                if btw_active && !is_running {
+                    session.messages.pop();
+                    if !cli.no_session {
+                        let _ = crate::session::storage::save_session(session);
+                    }
+                    btw_active = false;
+                }
                 refresh_display(&mut renderer, &input, session, is_running, loop_label.as_deref(), context.current_prompt_name.as_deref(), perm_mode().as_deref())?;
             }
             Some(ask_req) = async {
