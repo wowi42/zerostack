@@ -58,6 +58,11 @@ pub async fn build_agent_inner<M: CompletionModel + 'static>(
         }
         + if !cwd.is_empty() { 30 + cwd.len() } else { 0 };
 
+    #[cfg(feature = "memory")]
+    let total_len = total_len
+        + context.memory.as_deref().map_or(0, |m| m.len() + 8) // "\n\n---\n\n" + content
+        + crate::agent::prompt::MEMORY_TOOLS_PROMPT.len();
+
     let mut preamble = String::with_capacity(total_len);
     preamble.push_str(reasoning_prefix);
     preamble.push_str(SYSTEM_PROMPT);
@@ -74,6 +79,11 @@ pub async fn build_agent_inner<M: CompletionModel + 'static>(
     if !cwd.is_empty() {
         preamble.push_str("\n\nCurrent working directory: ");
         preamble.push_str(&cwd);
+    }
+    #[cfg(feature = "memory")]
+    {
+        crate::agent::memory::append_memory_block(&mut preamble, context.memory.as_deref());
+        preamble.push_str(crate::agent::prompt::MEMORY_TOOLS_PROMPT);
     }
 
     let mut builder = AgentBuilder::new(model).preamble(&preamble);
@@ -123,6 +133,14 @@ pub async fn build_agent_inner<M: CompletionModel + 'static>(
         ]);
 
         let mut builder = builder.tools(base_tools.into_vec());
+        #[cfg(feature = "memory")]
+        {
+            use crate::agent::memory::{MemoryRead, MemorySearch, MemoryWrite};
+            builder = builder
+                .tool(MemoryWrite::new(permission.clone(), ask_tx.clone()))
+                .tool(MemoryRead::new(permission.clone(), ask_tx.clone()))
+                .tool(MemorySearch::new(permission.clone(), ask_tx.clone()));
+        }
 
         #[cfg(feature = "mcp")]
         if let Some(manager) = &mcp_manager {

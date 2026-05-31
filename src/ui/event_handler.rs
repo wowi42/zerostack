@@ -301,9 +301,17 @@ async fn handle_agent_done(
     #[cfg(not(feature = "loop"))]
     let loop_running = false;
 
+    #[cfg(feature = "memory")]
+    let reserve = crate::agent::memory::effective_reserve(
+        cfg.resolve_reserve_tokens(),
+        context.memory.as_deref(),
+    );
+    #[cfg(not(feature = "memory"))]
+    let reserve = cfg.resolve_reserve_tokens();
+
     if !loop_running
         && cfg.resolve_compact_enabled()
-        && session.needs_compaction(cfg.resolve_reserve_tokens())
+        && session.needs_compaction(reserve)
         && !cli.no_session
     {
         renderer.write_line("auto-compacting...", Color::DarkGrey)?;

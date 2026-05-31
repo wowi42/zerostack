@@ -18,6 +18,7 @@ Minimal coding agent written in Rust, inspired by [pi](https://pi.dev/docs/lates
 - **Integrated Ralph Wiggum loops**: looping capabilities for long-horizon tasks
 - **Integrated Git Worktrees integration**: Use `/worktree` to move the agent from one worktree to another.
 - **ACP support** (gated): Agent Communication Protocol server — lets editors (Zed, etc.) connect to zerostack as an ACP agent
+- **Persistent memory** (gated): plain-Markdown memory across sessions: a global MEMORY.md plus per-project daily logs, scratchpad, and notes, injected into the system prompt each session
 
 **NOTE**: Windows support is not tested is any way, but feel free to try and open an issue if you encounter any bugs!
 
@@ -46,7 +47,7 @@ You are now ready to work with a lightweight coding agent! (You can also find pr
 
 Once installed, run `/prompt autoconfig` inside zerostack to explore the documentation and configure the tool interactively.
 
-*note:* If you have questions or you want to collaborate on the project, please join the [dedicated Matrix chatroom](https://app.element.io/#/room/#zerostack-general:matrix.org).
+_note:_ If you have questions or you want to collaborate on the project, please join the [dedicated Matrix chatroom](https://app.element.io/#/room/#zerostack-general:matrix.org).
 
 ### Optional: sandbox mode
 
@@ -171,6 +172,17 @@ Sessions are saved to `$XDG_DATA_HOME/zerostack/sessions/`. Use `-c` to
 resume the most recent session, `-r` to browse and select one, or
 `--session <id>` to load a specific session.
 
+## Memory
+
+**NOTE:** Memory is gated behind the `memory` feature and is not included in the
+default build. Install with `cargo install zerostack --features memory`.
+
+With the `memory` feature, zerostack keeps plain-Markdown notes on disk and
+injects the relevant ones into the system prompt at the start of every session,
+so it remembers your preferences and recent context across runs.
+
+Global memory files are stored in `$XDG_DATA_HOME/zerostack/agent/memory/`.
+
 ## Parallel Agent
 
 If you want to make multiple agents work on the same repository without having to work with git worktrees,
@@ -281,7 +293,7 @@ and API key env vars apply). Without it, zerostack cannot process prompts.
 - Ollama
 
 Custom providers can be configured with any base URL and API key environment
-variable in  `~/.local/share/zerostack/config.json`.
+variable in `~/.local/share/zerostack/config.json`.
 
 ## License
 

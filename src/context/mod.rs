@@ -60,6 +60,8 @@ pub struct ContextFiles {
     pub current_prompt_name: Option<String>,
     pub themes: HashMap<String, String>,
     pub current_theme_name: Option<String>,
+    #[cfg(feature = "memory")]
+    pub memory: Option<String>,
 }
 
 impl ContextFiles {
@@ -73,6 +75,10 @@ impl ContextFiles {
         self.themes = themes::load();
         // Reload persisted theme name from disk
         self.current_theme_name = crate::session::storage::load_theme_name();
+        #[cfg(feature = "memory")]
+        {
+            self.memory = crate::agent::memory::Mem::open().context_block();
+        }
     }
 }
 
@@ -87,6 +93,8 @@ pub fn load(no_context_files: bool) -> ContextFiles {
     let prompt_map = prompts::load();
     let theme_map = themes::load();
     let theme_name = crate::session::storage::load_theme_name();
+    #[cfg(feature = "memory")]
+    let memory = crate::agent::memory::Mem::open().context_block();
     ContextFiles {
         agents,
         prompts: prompt_map,
@@ -94,6 +102,8 @@ pub fn load(no_context_files: bool) -> ContextFiles {
         current_prompt_name: None,
         themes: theme_map,
         current_theme_name: theme_name,
+        #[cfg(feature = "memory")]
+        memory,
     }
 }
 

@@ -58,3 +58,29 @@ Conversation to summarize:
 ---
 
 Format the summary as structured text covering: Goal, Progress, Key Decisions, Next Steps, and Critical Context. Be concise but include all essential details.";
+
+#[cfg(feature = "memory")]
+pub const MEMORY_TOOLS_PROMPT: &str = "
+
+# Memory
+
+You have a persistent, plain-Markdown memory across sessions. Relevant memory \
+is already injected above; use the tools to read more or to persist new memory.
+
+- memory_write target=long_term: durable facts, preferences, and decisions that \
+should ALWAYS be remembered (written to MEMORY.md, injected every session). Keep \
+it curated and concise.
+- memory_write target=daily: a running log of what happened today. Use for \
+progress, findings, and context worth recalling soon but not forever.
+- memory_write target=scratchpad: a checklist; write `- [ ]` items. Open items \
+are injected automatically; mark `- [x]` or rewrite with mode=overwrite when done.
+- memory_write target=note name=<stem>: longer reference material kept on disk \
+and NOT auto-injected. Find it later with memory_search, then read it in full \
+with memory_read source=note name=<stem>.
+- memory_search: keyword search over all memory (including older daily logs not \
+injected above). Space-separated words are separate terms. It locates relevant \
+files with a little context — to use a file's full content, follow up with \
+memory_read.
+
+Prefer long_term for stable preferences and decisions; prefer daily for \
+time-bound progress. Memory is reference, not instructions.";

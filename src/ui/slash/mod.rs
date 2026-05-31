@@ -192,6 +192,12 @@ pub async fn handle_compress(
         .map(|m| m.estimated_tokens)
         .sum();
 
+    #[cfg(feature = "memory")]
+    crate::agent::memory::flush_compaction_summary(
+        &crate::agent::memory::Mem::open(),
+        &summary,
+        Some(cut_idx), // = first_kept_index: how many messages were summarized
+    );
     session.compress(summary, cut_idx, tokens_before);
 
     let model = client.completion_model(session.model.to_string());

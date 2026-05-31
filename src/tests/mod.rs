@@ -6,5 +6,7 @@ mod checker_tests;
 mod edit_tests;
 #[cfg(test)]
 mod input_tests;
+#[cfg(all(test, feature = "memory"))]
+mod memory_tests;
 #[cfg(test)]
 mod picker_tests;
