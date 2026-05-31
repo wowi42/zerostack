@@ -21,7 +21,6 @@ static CONFIG: Mutex<Option<SubagentConfig>> = Mutex::new(None);
 
 static SUBAGENT_EVENT_TX: Mutex<Option<mpsc::Sender<AgentEvent>>> = Mutex::new(None);
 
-#[allow(dead_code)]
 pub(crate) fn set_subagent_event_tx(tx: mpsc::Sender<AgentEvent>) {
     let mut guard = SUBAGENT_EVENT_TX.lock().unwrap_or_else(|e| e.into_inner());
     *guard = Some(tx);

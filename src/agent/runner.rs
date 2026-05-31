@@ -45,6 +45,9 @@ where
 {
     let (event_tx, event_rx) = mpsc::channel::<AgentEvent>(32);
 
+    #[cfg(feature = "subagents")]
+    crate::extras::subagents::set_subagent_event_tx(event_tx.clone());
+
     tokio::spawn(async move {
         // Clone prompt and history so they're available for a potential retry
         // when the model returns an empty final response.
