@@ -50,8 +50,8 @@ pub(crate) fn switch_prompt(
         content
     });
     context.current_prompt_name = Some(prompt_name.to_string());
-    if let Some(ref mode_str) = mode_directive {
-        if let Some(perm) = permission {
+    if let Some(ref mode_str) = mode_directive
+        && let Some(perm) = permission {
             let mut guard = perm.lock().unwrap_or_else(|e| e.into_inner());
             if mode_str == "last_user_mode" {
                 guard.restore_user_mode();
@@ -59,7 +59,6 @@ pub(crate) fn switch_prompt(
                 guard.set_prompt_mode(mode);
             }
         }
-    }
     true
 }
 

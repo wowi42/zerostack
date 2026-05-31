@@ -219,25 +219,6 @@ impl Mem {
             fs::create_dir_all(parent)?;
         }
         match mode {
-            WriteMode::Overwrite => {
-                atomic_write(&path, content)?;
-            }
-            WriteMode::Append => {
-                // Memory files are small; read-modify-write is simpler and clearer
-                // than seeking to the end to inspect the last byte.
-                let mut prev = fs::read_to_string(&path).unwrap_or_default();
-                if !prev.is_empty() && !prev.ends_with('\n') {
-                    prev.push('\n');
-                }
-                prev.push_str(content);
-                if !prev.ends_with('\n') {
-                    prev.push('\n');
-                }
-                atomic_write(&path, &prev)?;
-            }
-        }
-=======
-        match mode {
             WriteMode::Overwrite => atomic_write(&path, content)?,
             WriteMode::Append => {
                 // Memory files are small; read-modify-write is simpler and clearer

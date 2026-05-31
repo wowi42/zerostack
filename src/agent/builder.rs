@@ -152,13 +152,12 @@ pub async fn build_agent_inner<M: CompletionModel + 'static>(
         #[cfg(feature = "mcp")]
         if let Some(manager) = &mcp_manager {
             let allow_all = cfg.allow_all_mcp_calls.unwrap_or(false);
-            if allow_all {
-                if let Some(ref perm) = permission {
+            if allow_all
+                && let Some(ref perm) = permission {
                     perm.lock()
                         .unwrap_or_else(|e| e.into_inner())
                         .set_allow_all_mcp_calls(true);
                 }
-            }
             let mcp_tools = manager
                 .collect_tools(permission.clone(), ask_tx.clone())
                 .await;

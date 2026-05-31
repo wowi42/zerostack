@@ -395,7 +395,7 @@ impl<'a> InteractiveSession<'a> {
 
     async fn handle_user_event(&mut self, ev: UserEvent) -> anyhow::Result<()> {
         match ev {
-            UserEvent::Resize(_, _) => {
+            UserEvent::Resize => {
                 self.renderer.resize();
                 self.refresh()?;
             }
