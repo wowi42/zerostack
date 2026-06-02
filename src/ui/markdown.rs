@@ -371,6 +371,7 @@ pub fn markdown_to_styled(text: &str, max_width: usize) -> Vec<LineEntry> {
                         Color::White
                     };
                     flush_acc(&acc, color, max_width, &mut result);
+                    acc.clear();
                     let code_text = format!("`{}`", t);
                     for chunk in word_wrap(&code_text, max_width) {
                         result.push(LineEntry {
@@ -656,6 +657,34 @@ mod tests {
             "inline code should have backticks"
         );
     }
+
+    #[test]
+    fn multiple_inline_codes_no_duplication() {
+        let styled = markdown_to_styled("foo `a` bar `b` baz", 80);
+        let joined: String = styled
+            .iter()
+            .map(|e| e.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        // "foo" should appear exactly once
+        assert_eq!(
+            joined.matches("foo").count(),
+            1,
+            "prose before first code must not duplicate: {joined}"
+        );
+        // "bar" between codes should appear exactly once
+        assert_eq!(
+            joined.matches("bar").count(),
+            1,
+            "prose between codes must not duplicate: {joined}"
+        );
+        assert_eq!(
+            joined.matches("baz").count(),
+            1,
+            "prose after last code must not duplicate: {joined}"
+        );
+    }
+
 
     #[test]
     fn inline_code_in_blockquote() {
