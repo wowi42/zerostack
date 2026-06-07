@@ -26,6 +26,5 @@ done
 
 echo ""
 echo "Next steps:"
-echo "  just pre-release     # sync version + source SHA256 (safe before release)"
 echo "  just add-tag          # push tag, trigger GitHub release"
-echo "  just post-release     # download binaries, update checksums, regenerate .SRCINFO"
+echo "  just post-release     # download artifacts, update all checksums, regen .SRCINFO"

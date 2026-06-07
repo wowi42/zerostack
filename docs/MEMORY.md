@@ -111,7 +111,7 @@ Every turn, `context_block()` builds the `<memory>` XML block injected into the 
 ```
 
 Rules:
-- Output is hard-capped at `MAX_INJECT_BYTES` (16 KiB) with `…[memory truncated]` if exceeded
+- Output is hard-capped at `MAX_INJECT_BYTES` (32 KiB) with `…[memory truncated]` if exceeded
 - Missing or empty files are silently skipped
 - If nothing exists, returns `None` (zero trace in the prompt)
 - Notes and older daily logs are deliberately excluded
@@ -203,7 +203,7 @@ Appends the `<memory>...</memory>` block to the system prompt preamble, separate
 
 | Constant | Value | Purpose |
 |---|---|---|
-| `MAX_INJECT_BYTES` | 65,536 (64 KiB) | Hard cap on context-block and search-render output |
+| `MAX_INJECT_BYTES` | 32,768 (32 KiB) | Hard cap on context-block and search-render output |
 | `MAX_WRITE_BYTES` | 65,536 (64 KiB) | Per-call content cap for memory_write (truncated with warning) |
 
 ---

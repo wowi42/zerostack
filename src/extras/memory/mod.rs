@@ -14,7 +14,7 @@ use crate::permission::checker::PermCheck;
 
 /// Hard cap on injected/returned memory, protecting the context window. This is
 /// a token-budget guard, not a memory-usage one — files are expected to be small.
-pub const MAX_INJECT_BYTES: usize = 64 * 1024;
+pub const MAX_INJECT_BYTES: usize = 32 * 1024;
 
 /// Hard cap on content accepted by a single memory_write call. Longer content is
 /// truncated (with a warning in the return message) rather than rejected, so the

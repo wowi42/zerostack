@@ -137,13 +137,13 @@ aur-regen-srcinfo:
 
 # ---- Packaging: release workflow ----
 
-# Run after bumping Cargo.toml version (can run before tag/release is published)
-pre-release: sync-version conda-source-sha256
-    @echo "=== pre-release done: version synced + source SHA256 updated ==="
+# Run after bumping Cargo.toml version (syncs version strings, no network needed)
+pre-release: sync-version
+    @echo "=== pre-release done: version synced across all packaging files ==="
     @echo "Next: just add-tag, wait for GitHub release, then: just post-release"
 
-# Run after the GitHub release has been published (needs binaries to be available)
-post-release: aur-checksums conda-bin-checksums aur-regen-srcinfo
+# Run after the GitHub release has been published (needs tag archive + binaries to be available)
+post-release: conda-source-sha256 aur-checksums conda-bin-checksums aur-regen-srcinfo
     @echo "=== post-release done: all checksums updated + .SRCINFO regenerated ==="
     @echo "Ready for:"
     @echo "  AUR: cd packaging/aur && pkgctl aur publish zerostack-bin"
