@@ -57,20 +57,6 @@ nix run github:gi-dellav/zerostack
 nix profile install github:gi-dellav/zerostack
 ```
 
-### Arch Linux (AUR) [work in progress]
-
-```bash
-yay -S zerostack-bin
-```
-
-(note: You can use any AUR helper)
-
-### Conda [work in progress]
-
-```bash
-conda install zerostack
-```
-
 ### Cargo
 
 ```bash
@@ -267,7 +253,7 @@ Global memory files are stored in `$XDG_DATA_HOME/zerostack/agent/memory/`.
 
 If you want to make multiple agents work on the same repository without having to work with git worktrees,
 zerostack now ships with `--parallel`, which enables full management of a temporary git worktree that will
-be merged and removed before exiting the agent. 
+be merged and removed before exiting the agent.
 
 ## Loop system
 
