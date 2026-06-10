@@ -112,7 +112,7 @@ pub async fn handle_agent_event(
     sandbox: &Sandbox,
     status_signals: &Option<StatusSignals>,
     #[cfg(feature = "loop")] loop_state: &mut Option<crate::extras::r#loop::LoopState>,
-    #[cfg(feature = "git-worktree")] wt_return_path: &mut Option<String>,
+    #[cfg(feature = "git-worktree")] wt_return_path: &mut Option<(String, String, String, bool)>,
     #[cfg(feature = "mcp")] mcp_manager: Option<&crate::extras::mcp::McpClientManager>,
 ) -> anyhow::Result<()> {
     match event {
@@ -331,7 +331,7 @@ async fn handle_agent_done(
     sandbox: &Sandbox,
     status_signals: &Option<StatusSignals>,
     #[cfg(feature = "loop")] loop_state: &mut Option<crate::extras::r#loop::LoopState>,
-    #[cfg(feature = "git-worktree")] wt_return_path: &mut Option<String>,
+    #[cfg(feature = "git-worktree")] wt_return_path: &mut Option<(String, String, String, bool)>,
     #[cfg(feature = "mcp")] mcp_manager: Option<&crate::extras::mcp::McpClientManager>,
 ) -> anyhow::Result<()> {
     *was_reasoning = false;
@@ -472,7 +472,8 @@ async fn handle_agent_done(
     *agent = None;
 
     #[cfg(feature = "git-worktree")]
-    if let Some(main_path) = wt_return_path.take() {
+    if let Some((main_path, wt_path, branch, force)) = wt_return_path.take() {
+        crate::extras::git_worktree::cleanup_worktree(&wt_path, &branch, &main_path, force);
         match std::env::set_current_dir(&main_path) {
             Ok(()) => {
                 session.working_dir = compact_str::CompactString::new(&main_path);

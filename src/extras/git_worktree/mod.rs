@@ -323,6 +323,50 @@ fn complete_merge_with_force(state: &MergeState, force: bool) -> Result<(), Stri
     result
 }
 
+/// Best-effort cleanup of a worktree after a merge. Safe to call even if the
+/// worktree or branch has already been removed (idempotent).
+pub fn cleanup_worktree(wt_path: &str, branch: &str, main_repo_path: &str, force: bool) {
+    let _ = std::env::set_current_dir(Path::new(main_repo_path));
+
+    let remove_output = if force {
+        Command::new("git")
+            .args(["worktree", "remove", "--force", wt_path])
+            .output()
+    } else {
+        Command::new("git")
+            .args(["worktree", "remove", wt_path])
+            .output()
+    };
+    if let Ok(out) = &remove_output {
+        if out.status.success() {
+            tracing::info!(branch, wt_path, "cleanup_worktree: removed worktree");
+        } else {
+            tracing::debug!(
+                branch,
+                wt_path,
+                stderr = %String::from_utf8_lossy(&out.stderr).trim(),
+                "cleanup_worktree: git worktree remove (already gone or failed)"
+            );
+        }
+    }
+
+    let branch_flag = if force { "-D" } else { "-d" };
+    let branch_output = Command::new("git")
+        .args(["branch", branch_flag, branch])
+        .output();
+    if let Ok(out) = &branch_output {
+        if out.status.success() {
+            tracing::info!(branch, "cleanup_worktree: deleted branch");
+        } else {
+            tracing::debug!(
+                branch,
+                stderr = %String::from_utf8_lossy(&out.stderr).trim(),
+                "cleanup_worktree: git branch delete (already gone or failed)"
+            );
+        }
+    }
+}
+
 /// Cancel an in-progress merge: abort, restore original branch, pop stash, restore dir.
 pub fn cancel_merge(state: &MergeState) -> Result<(), String> {
     let _ = std::env::set_current_dir(&state.info.main_repo_path);

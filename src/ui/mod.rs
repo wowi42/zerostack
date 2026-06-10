@@ -366,7 +366,7 @@ pub async fn run_interactive(
     #[cfg(feature = "loop")]
     let mut loop_state: Option<crate::extras::r#loop::LoopState> = None;
     #[cfg(feature = "git-worktree")]
-    let mut wt_return_path: Option<String> = None;
+    let mut wt_return_path: Option<(String, String, String, bool)> = None;
     // `/btw` side questions run on an independent event stream — they never
     // touch `agent_rx`/`is_running`/`session`, so they can run in parallel with
     // the main agent and leave no trace in conversation history.
@@ -1053,7 +1053,7 @@ pub async fn run_interactive(
                                             if let Some(ss) = status_signals.as_ref() {
                                                 ss.send_start();
                                             }
-                                            wt_return_path = Some(main_path);
+                                            wt_return_path = Some((main_path, wt_path.to_string(), branch.to_string(), force_flag));
                                         }
                                     }
                                     #[cfg(feature = "git-worktree")]
