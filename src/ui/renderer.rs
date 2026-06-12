@@ -259,7 +259,8 @@ impl Renderer {
         let mut stdout = io::stdout();
         write!(stdout, "{}", Hide)?;
 
-        let start = if self.scroll_offset == 0 {
+        let auto_scroll = self.scroll_offset == 0;
+        let start = if auto_scroll {
             total.saturating_sub(visible)
         } else {
             total.saturating_sub(self.scroll_offset + visible)
@@ -268,6 +269,21 @@ impl Renderer {
 
         let mut visual_row: u16 = 0;
         let mut buf_idx = start;
+
+        // Bottom-align: when auto-scrolling and content is shorter than viewport,
+        // render empty rows first so content hugs the input area.
+        if auto_scroll && total < visible {
+            let pad = visible - total;
+            for _ in 0..pad {
+                stdout.execute(MoveTo(0, visual_row))?;
+                if let Some(bg) = self.chat_bg {
+                    write!(stdout, "{}", SetBackgroundColor(self.color(bg)))?;
+                }
+                write!(stdout, "{}", Clear(ClearType::UntilNewLine))?;
+                write!(stdout, "{}", ResetColor)?;
+                visual_row += 1;
+            }
+        }
 
         while (visual_row as usize) < visible && buf_idx < total {
             let entry = &self.buffer[buf_idx];
