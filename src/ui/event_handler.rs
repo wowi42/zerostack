@@ -370,13 +370,15 @@ async fn handle_agent_done(
     #[cfg(not(feature = "loop"))]
     let loop_running = false;
 
+    let qm = crate::config::quick_models_map(cfg);
+
     #[cfg(feature = "memory")]
     let reserve = crate::extras::memory::effective_reserve(
-        cfg.resolve_reserve_tokens(),
+        cfg.resolve_reserve_tokens(&session.model, &qm),
         context.memory.as_deref(),
     );
     #[cfg(not(feature = "memory"))]
-    let reserve = cfg.resolve_reserve_tokens();
+    let reserve = cfg.resolve_reserve_tokens(&session.model, &qm);
 
     if !loop_running
         && cfg.resolve_compact_enabled()

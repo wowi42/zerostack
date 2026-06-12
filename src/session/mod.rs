@@ -119,6 +119,10 @@ impl Session {
         self.total_estimated_tokens > self.context_window.saturating_sub(reserve_tokens)
     }
 
+    pub fn update_context_window(&mut self, cw: u64) {
+        self.context_window = cw;
+    }
+
     pub fn compacted_context(&self) -> (Option<&str>, usize) {
         match self.compactions.last() {
             Some(c) => (Some(c.summary.as_str()), c.first_kept_index),

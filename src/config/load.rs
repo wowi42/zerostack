@@ -61,6 +61,7 @@ fn default_quick_models() -> HashMap<String, QuickModelConfig> {
             model: CompactString::new("deepseek/deepseek-v4-flash"),
             input_token_cost: 0.0983,
             output_token_cost: 0.1966,
+            reserve_tokens: None,
         },
     );
     map.insert(
@@ -70,19 +71,14 @@ fn default_quick_models() -> HashMap<String, QuickModelConfig> {
             model: CompactString::new("deepseek/deepseek-v4-pro"),
             input_token_cost: 0.435,
             output_token_cost: 0.87,
+            reserve_tokens: None,
         },
     );
     map
 }
 
 pub fn quick_models_map(cfg: &Config) -> HashMap<String, QuickModelConfig> {
-    let mut map = default_quick_models();
-    if let Some(user_models) = &cfg.quick_models {
-        for (k, v) in user_models {
-            map.insert(k.clone(), v.clone());
-        }
-    }
-    map
+    cfg.quick_models.clone().unwrap_or_default()
 }
 
 pub fn save_quick_model(
@@ -111,6 +107,7 @@ pub fn save_quick_model(
             model: CompactString::new(model),
             input_token_cost,
             output_token_cost,
+            reserve_tokens: None,
         },
     );
 
@@ -134,14 +131,12 @@ fn rich_default_config() -> Config {
     cfg.provider = Some(CompactString::new("openrouter"));
     cfg.model = Some(CompactString::new("deepseek/deepseek-v4-pro"));
     cfg.max_tokens = Some(16384);
-    cfg.context_window = Some(128_000);
     cfg.compact_enabled = Some(true);
     cfg.max_text_file_size = Some(1_048_576);
     cfg.edit_system = Some(EditSystem::Similarity);
     cfg.default_permission_mode = Some("standard".to_string());
     cfg.default_prompt = Some(CompactString::new("code"));
     cfg.show_tool_details = Some(ShowToolDetails::Lines(1));
-    cfg.subagent_model = Some(CompactString::new("deepseek-v4-flash"));
     #[cfg(feature = "subagents")]
     {
         cfg.subagent_max_read_lines = Some(2000);

@@ -181,12 +181,39 @@ impl Config {
         self.custom_providers.clone().unwrap_or_default()
     }
 
-    pub fn resolve_context_window(&self) -> u64 {
-        self.context_window.unwrap_or(128_000)
+    pub fn resolve_context_window(&self, provider: &str, model_id: &str) -> u64 {
+        if let Some(cw) = self.context_window {
+            return cw;
+        }
+        if let Some(entries) = crate::models_catalog::catalog_entries(provider) {
+            for e in entries {
+                if e.id == model_id {
+                    if let Some(cl) = e.context_length {
+                        return cl as u64;
+                    }
+                    break;
+                }
+            }
+        }
+        128_000
     }
 
-    pub fn resolve_reserve_tokens(&self) -> u64 {
-        self.reserve_tokens.unwrap_or(16_384)
+    pub fn resolve_reserve_tokens(
+        &self,
+        model_id: &str,
+        qm: &HashMap<String, types::QuickModelConfig>,
+    ) -> u64 {
+        if let Some(rt) = self.reserve_tokens {
+            return rt;
+        }
+        for qmc in qm.values() {
+            if qmc.model.as_str() == model_id {
+                if let Some(rt) = qmc.reserve_tokens {
+                    return rt;
+                }
+            }
+        }
+        8_192
     }
 
     pub fn resolve_keep_recent_tokens(&self) -> u64 {

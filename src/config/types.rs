@@ -11,6 +11,8 @@ pub struct QuickModelConfig {
     pub input_token_cost: f64,
     #[serde(default)]
     pub output_token_cost: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reserve_tokens: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

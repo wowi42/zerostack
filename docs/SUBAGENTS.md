@@ -89,7 +89,7 @@ The main agent's `task` tool itself goes through the normal permission check
 |------------------------|-----------|---------------------|---------------------------------------|
 | `task_max_turns`       | `usize`   | `15`                | Max agent turns per subagent          |
 | `task_enabled`         | `bool`    | `true`              | Whether the `task` tool is registered |
-| `subagent_model`       | `string`  | `deepseek-v4-flash` | Model name or quick-model alias       |
+| `subagent_model`       | `string`  | `none (uses main model)` | Model name or quick-model alias       |
 | `subagent_provider`    | `string`  | (same as main)      | Provider for the subagent (optional)  |
 
 ### Model resolution (in order of precedence)
@@ -97,7 +97,7 @@ The main agent's `task` tool itself goes through the normal permission check
 1. `subagent_model` is set and matches a **quick model name** (e.g. `"deepseek-v4-flash"`) → uses that quick model's provider + model.
 2. `subagent_model` is set but does **not** match a quick model → uses the raw model string with `subagent_provider` (or the main provider as fallback).
 3. `subagent_model` is **not** set but `subagent_provider` is → uses the main model with the specified provider.
-4. Neither is set → falls back to the built-in `deepseek-v4-flash` quick model (OpenRouter / `deepseek/deepseek-v4-flash`).
+4. Neither is set → falls back to the main agent's model (same provider + model).
 
 When the subagent uses a different provider than the main agent, a separate
 API client is created at startup. The subagent client is independent from the

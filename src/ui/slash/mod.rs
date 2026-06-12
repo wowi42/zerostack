@@ -167,7 +167,8 @@ pub async fn handle_compress(
     renderer.write_line("compressing...", C_AGENT)?;
     renderer.write_line("", crossterm::style::Color::White)?;
 
-    let reserve = cfg.resolve_reserve_tokens();
+    let qm = crate::config::quick_models_map(cfg);
+    let reserve = cfg.resolve_reserve_tokens(&session.model, &qm);
     let keep_recent = cfg.resolve_keep_recent_tokens();
     let max_tokens = session.context_window.saturating_sub(reserve);
 

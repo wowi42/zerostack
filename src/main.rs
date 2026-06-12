@@ -137,7 +137,11 @@ async fn main() -> anyhow::Result<()> {
         model = qm.model.clone();
     }
 
-    let mut session = session::Session::new(&provider, &model, cfg.resolve_context_window());
+    let mut session = session::Session::new(
+        &provider,
+        &model,
+        cfg.resolve_context_window(&provider, &model),
+    );
 
     // Resolve input/output token costs from quick models or defaults
     let qm_map = config::quick_models_map(&cfg);
@@ -204,7 +208,7 @@ async fn main() -> anyhow::Result<()> {
         let task_max_turns = cfg.task_max_turns.unwrap_or(20);
         let qm = config::quick_models_map(&cfg);
 
-        // Resolve subagent model: subagent_model config > subagent_provider + model > deepseek-v4-flash quick model
+        // Resolve subagent model: subagent_model config > subagent_provider + model > main model
         let (sub_provider, mut sub_model) = if let Some(sa_model) = &cfg.subagent_model {
             if let Some(q) = qm.get(sa_model.as_str()) {
                 (q.provider.clone(), q.model.clone())
@@ -217,8 +221,6 @@ async fn main() -> anyhow::Result<()> {
             }
         } else if let Some(sa_prov) = &cfg.subagent_provider {
             (sa_prov.clone(), model.clone())
-        } else if let Some(dsv4) = qm.get("deepseek-v4-pro") {
-            (dsv4.provider.clone(), dsv4.model.clone())
         } else {
             (provider.clone(), model.clone())
         };
@@ -759,9 +761,10 @@ fn print_config(cli: &cli::Cli, cfg: &config::Config) {
 
     let model = cli.resolve_model(cfg);
     let provider = cli.resolve_provider(cfg);
+    let qm_map = config::quick_models_map(cfg);
     let max_tokens = cli.resolve_max_tokens(cfg);
     let max_agent_turns = cli.resolve_max_agent_turns(cfg);
-    let context_window = cfg.resolve_context_window();
+    let context_window = cfg.resolve_context_window(&provider, &model);
     let temperature = cli.temperature.or(cfg.temperature);
     let no_tools = cli.resolve_no_tools(cfg);
     let no_context_files = cli.resolve_no_context_files(cfg);
@@ -816,7 +819,10 @@ fn print_config(cli: &cli::Cli, cfg: &config::Config) {
         ("max-tokens", max_tokens.to_string()),
         ("max-agent-turns", max_agent_turns.to_string()),
         ("context-window", context_window.to_string()),
-        ("reserve-tokens", cfg.resolve_reserve_tokens().to_string()),
+        (
+            "reserve-tokens",
+            cfg.resolve_reserve_tokens(&model, &qm_map).to_string(),
+        ),
         ("max-read-lines", cfg.resolve_max_read_lines().to_string()),
         (
             "max-bash-output-lines",
