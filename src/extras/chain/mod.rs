@@ -79,6 +79,9 @@ pub fn parse_chain_decision(input: &str) -> ChainDecision {
     for prefix in &["but ", "b ", "yes but ", "yes b ", "y but ", "y b "] {
         if lower.starts_with(prefix) {
             let extra = trimmed[prefix.len()..].trim().to_string();
+            if extra.is_empty() {
+                return ChainDecision::NotChain;
+            }
             return ChainDecision::Accept(Some(extra));
         }
     }
@@ -179,5 +182,93 @@ mod tests {
         assert!(cfg.brainstorm_to_plan);
         assert!(cfg.plan_to_code);
         assert!(!cfg.code_to_review);
+    }
+
+    #[test]
+    fn test_is_enabled_default_config() {
+        let cfg = ChainConfig::default();
+        assert!(ChainPhase::Brainstorm.is_enabled(&cfg));
+        assert!(ChainPhase::Plan.is_enabled(&cfg));
+        assert!(!ChainPhase::Code.is_enabled(&cfg));
+    }
+
+    #[test]
+    fn test_is_enabled_all_off() {
+        let cfg = ChainConfig {
+            brainstorm_to_plan: false,
+            plan_to_code: false,
+            code_to_review: false,
+        };
+        assert!(!ChainPhase::Brainstorm.is_enabled(&cfg));
+        assert!(!ChainPhase::Plan.is_enabled(&cfg));
+        assert!(!ChainPhase::Code.is_enabled(&cfg));
+    }
+
+    #[test]
+    fn test_is_enabled_all_on() {
+        let cfg = ChainConfig {
+            brainstorm_to_plan: true,
+            plan_to_code: true,
+            code_to_review: true,
+        };
+        assert!(ChainPhase::Brainstorm.is_enabled(&cfg));
+        assert!(ChainPhase::Plan.is_enabled(&cfg));
+        assert!(ChainPhase::Code.is_enabled(&cfg));
+    }
+
+    #[test]
+    fn test_is_enabled_only_review() {
+        let cfg = ChainConfig {
+            brainstorm_to_plan: false,
+            plan_to_code: false,
+            code_to_review: true,
+        };
+        assert!(!ChainPhase::Brainstorm.is_enabled(&cfg));
+        assert!(!ChainPhase::Plan.is_enabled(&cfg));
+        assert!(ChainPhase::Code.is_enabled(&cfg));
+    }
+
+    #[test]
+    fn test_full_progression_default_config() {
+        // brainstorm → plan → code, code→review off by default
+        let cfg = ChainConfig::default();
+
+        let phase = ChainPhase::from_prompt_name("brainstorm").unwrap();
+        assert_eq!(phase, ChainPhase::Brainstorm);
+        assert!(phase.is_enabled(&cfg));
+        assert_eq!(phase.next_prompt_name(), "plan");
+
+        let phase = ChainPhase::from_prompt_name("plan").unwrap();
+        assert_eq!(phase, ChainPhase::Plan);
+        assert!(phase.is_enabled(&cfg));
+        assert_eq!(phase.next_prompt_name(), "code");
+
+        let phase = ChainPhase::from_prompt_name("code").unwrap();
+        assert_eq!(phase, ChainPhase::Code);
+        assert!(!phase.is_enabled(&cfg));
+        assert_eq!(phase.next_prompt_name(), "review");
+    }
+
+    #[test]
+    fn test_full_progression_all_enabled() {
+        let cfg = ChainConfig {
+            brainstorm_to_plan: true,
+            plan_to_code: true,
+            code_to_review: true,
+        };
+
+        for name in &["brainstorm", "plan", "code"] {
+            let phase = ChainPhase::from_prompt_name(name).unwrap();
+            assert!(phase.is_enabled(&cfg));
+        }
+    }
+
+    #[test]
+    fn test_parse_decision_but_variants_empty_is_not_chain() {
+        // All "but" variants without actual instruction should be NotChain
+        assert_eq!(parse_chain_decision("b "), ChainDecision::NotChain);
+        assert_eq!(parse_chain_decision("yes but "), ChainDecision::NotChain);
+        assert_eq!(parse_chain_decision("y but "), ChainDecision::NotChain);
+        assert_eq!(parse_chain_decision("BUT "), ChainDecision::NotChain);
     }
 }

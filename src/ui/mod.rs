@@ -898,8 +898,6 @@ pub async fn run_interactive(
                                         if let Some(content) =
                                             context.prompts.get(next_name).cloned()
                                         {
-                                            dot_prompt_restore =
-                                                context.current_prompt_name.clone();
                                             let (mode_directive_str, clean_content) =
                                                 crate::permission::parse_prompt_mode(
                                                     &content,
