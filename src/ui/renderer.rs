@@ -584,6 +584,7 @@ impl Renderer {
         input_line: &str,
         cursor_pos: usize,
         status: &str,
+        chain_badge: Option<&str>,
         is_running: bool,
     ) -> io::Result<()> {
         let (cols, rows) = crossterm::terminal::size()?;
@@ -678,6 +679,10 @@ impl Renderer {
             )?;
             let truncated: String = status.chars().take(cols as usize).collect();
             write!(stdout, "{}", truncated)?;
+            if let Some(cb) = chain_badge {
+                write!(stdout, "{}", SetForegroundColor(self.color(Color::Cyan)))?;
+                write!(stdout, "{}", cb)?;
+            }
             write!(stdout, "{}", Clear(ClearType::UntilNewLine))?;
             write!(stdout, "{}", ResetColor)?;
 
@@ -870,6 +875,10 @@ impl Renderer {
         };
         let truncated: String = status_display.chars().take(cols as usize).collect();
         write!(stdout, "{}", truncated)?;
+        if let Some(cb) = chain_badge {
+            write!(stdout, "{}", SetForegroundColor(self.color(Color::Cyan)))?;
+            write!(stdout, "{}", cb)?;
+        }
         write!(stdout, "{}", Clear(ClearType::UntilNewLine))?;
         write!(stdout, "{}", ResetColor)?;
 

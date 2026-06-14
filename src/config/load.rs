@@ -5,7 +5,7 @@ use compact_str::CompactString;
 
 use std::io;
 
-use crate::config::{Config, EditSystem, QuickModelConfig, ShowToolDetails};
+use crate::config::{Config, EditSystem, QuickModelConfig};
 #[cfg(feature = "mcp")]
 use crate::extras::mcp::config::McpServerConfig;
 use crate::session::storage;
@@ -139,7 +139,7 @@ fn rich_default_config() -> Config {
     cfg.edit_system = Some(EditSystem::Similarity);
     cfg.default_permission_mode = Some("standard".to_string());
     cfg.default_prompt = Some(CompactString::new("code"));
-    cfg.show_tool_details = Some(ShowToolDetails::Lines(1));
+    cfg.show_tool_details = None;
     #[cfg(feature = "subagents")]
     {
         cfg.subagent_max_read_lines = Some(2000);

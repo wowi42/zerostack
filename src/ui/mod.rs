@@ -92,7 +92,7 @@ fn refresh_display(
     btw_out: u64,
 ) -> io::Result<()> {
     renderer.render_viewport()?;
-    let status = StatusLine::render(
+    let (status, chain_badge) = StatusLine::render(
         session,
         is_running,
         0,
@@ -104,7 +104,13 @@ fn refresh_display(
         btw_in,
         btw_out,
     );
-    renderer.draw_bottom(&input.buffer, input.cursor, &status, is_running)?;
+    renderer.draw_bottom(
+        &input.buffer,
+        input.cursor,
+        &status,
+        chain_badge.as_deref(),
+        is_running,
+    )?;
     if let Some(ref mut picker) = input.picker {
         picker.draw()?;
     }
@@ -1450,8 +1456,8 @@ pub async fn run_interactive(
                         } else if is_running {
                             refresh_display(&mut renderer, &mut input, session, is_running, loop_label.as_deref(), context.current_prompt_name.as_deref(), perm_mode().as_deref(), chain_label_msg.as_deref(), btw_total_cost, btw_total_in, btw_total_out)?;
                         } else {
-                            let status = StatusLine::render(session, is_running, 0, loop_label.as_deref(), context.current_prompt_name.as_deref(), perm_mode().as_deref(), chain_label_msg.as_deref(), btw_total_cost, btw_total_in, btw_total_out);
-                            renderer.draw_bottom(&input.buffer, input.cursor, &status, is_running)?;
+                            let (status, chain_badge) = StatusLine::render(session, is_running, 0, loop_label.as_deref(), context.current_prompt_name.as_deref(), perm_mode().as_deref(), chain_label_msg.as_deref(), btw_total_cost, btw_total_in, btw_total_out);
+                            renderer.draw_bottom(&input.buffer, input.cursor, &status, chain_badge.as_deref(), is_running)?;
                             if let Some(ref mut picker) = input.picker {
                                 picker.draw()?;
                             }
