@@ -328,7 +328,6 @@ where
                         if let Some(usage) = call.usage {
                             let _ = event_tx
                                 .send(AgentEvent::CompletionCall {
-                                    call_index: call.call_index,
                                     input_tokens: usage.input_tokens,
                                     output_tokens: usage.output_tokens,
                                 })

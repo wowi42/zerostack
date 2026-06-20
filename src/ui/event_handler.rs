@@ -295,7 +295,6 @@ pub async fn handle_agent_event(
             .await?;
         }
         AgentEvent::CompletionCall {
-            call_index: _,
             input_tokens,
             output_tokens,
         } => {

@@ -601,7 +601,10 @@ fn stop_turn_context_exhausted(
         prompt_tokens,
         threshold,
         session.context_window,
-        cfg.resolve_reserve_tokens(),
+        cfg.resolve_reserve_tokens(
+            &session.model,
+            &crate::config::quick_models_map(cfg),
+        ),
         cfg.resolve_keep_recent_tokens(),
     ) {
         renderer.write_line(&line, Color::White)?;
@@ -1849,7 +1852,7 @@ pub async fn run_interactive(
                             ).await?;
                             awaiting_compaction_relief = true;
                         }
-                        refresh_display(&mut renderer, &mut input, session, is_running, loop_label.as_deref(), context.current_prompt_name.as_deref(), perm_mode().as_deref(), btw_total_cost, btw_total_in, btw_total_out)?;
+                        refresh_display(&mut renderer, &mut input, session, is_running, loop_label.as_deref(), context.current_prompt_name.as_deref(), perm_mode().as_deref(), chain_label_msg.as_deref(), btw_total_cost, btw_total_in, btw_total_out)?;
                         continue;
                     } else {
                         // A provider call came back under the ceiling: either we

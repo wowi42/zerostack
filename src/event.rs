@@ -22,7 +22,6 @@ pub enum AgentEvent {
     /// status-bar estimate and to drive mid-turn compaction decisions
     /// independently of the local `len()/4` heuristic.
     CompletionCall {
-        call_index: usize,
         input_tokens: u64,
         output_tokens: u64,
     },
