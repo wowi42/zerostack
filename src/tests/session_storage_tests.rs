@@ -1,7 +1,7 @@
 use crate::session::MessageRole;
 use crate::session::Session;
 use crate::session::storage::{
-    delete_session, find_sessions_by_prefix, load_suffix, save_session, suffix_path,
+    delete_session, find_all_sessions, find_sessions_by_prefix, load_suffix, save_session, suffix_path,
 };
 use std::env;
 use std::sync::Mutex;
@@ -82,6 +82,50 @@ fn save_session_preserves_messages() {
     assert_eq!(found[0].messages.len(), 2);
     assert_eq!(found[0].messages[0].content, "question");
     assert_eq!(found[0].messages[1].content, "answer");
+    drop(env);
+}
+
+#[test]
+fn save_session_preserves_tool_messages() {
+    let env = setup_test_env();
+    let mut s = Session::new("anthropic", "claude", 200000);
+    s.add_message(MessageRole::User, "question");
+    s.add_tool_call("read", &serde_json::json!({ "path": "src/main.rs" }));
+    s.add_tool_result("read", "file contents");
+    s.add_subagent_tool_call("task", &serde_json::json!({ "prompts": ["find x"] }));
+    s.add_message(MessageRole::Assistant, "answer");
+    save_session(&s).unwrap();
+
+    let found = find_sessions_by_prefix(&s.id[..8].to_string()).unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].messages.len(), 5);
+    assert_eq!(found[0].messages[1].role, MessageRole::ToolCall);
+    assert!(found[0].messages[1].content.contains("read"));
+    assert_eq!(found[0].messages[2].role, MessageRole::ToolResult);
+    assert_eq!(found[0].messages[2].content, "read:\nfile contents");
+    assert_eq!(found[0].messages[3].role, MessageRole::SubagentToolCall);
+    drop(env);
+}
+
+#[test]
+fn find_all_sessions_returns_saved_sessions_newest_first() {
+    let env = setup_test_env();
+    let mut older = Session::new("openai", "gpt-4", 128000);
+    older.updated_at = "2026-01-01T00:00:00Z".into();
+    older.add_message(MessageRole::User, "older");
+    older.updated_at = "2026-01-01T00:00:00Z".into();
+    save_session(&older).unwrap();
+
+    let mut newer = Session::new("anthropic", "claude", 200000);
+    newer.updated_at = "2026-01-02T00:00:00Z".into();
+    newer.add_message(MessageRole::User, "newer");
+    newer.updated_at = "2026-01-02T00:00:00Z".into();
+    save_session(&newer).unwrap();
+
+    let found = find_all_sessions().unwrap();
+    assert_eq!(found.len(), 2);
+    assert_eq!(found[0].id, newer.id);
+    assert_eq!(found[1].id, older.id);
     drop(env);
 }
 

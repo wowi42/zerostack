@@ -229,6 +229,9 @@ pub(crate) fn format_conversation(msgs: &[SessionMessage], kilobytes_limit: u32)
             MessageRole::User => "User",
             MessageRole::Assistant => "Assistant",
             MessageRole::System => "System",
+            MessageRole::ToolCall => "ToolCall",
+            MessageRole::ToolResult => "ToolResult",
+            MessageRole::SubagentToolCall => "SubagentToolCall",
         };
         format!("[{role}]: {}", msg.content)
     }

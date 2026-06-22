@@ -122,12 +122,22 @@ pub fn convert_history(session: &Session) -> Vec<Message> {
         match msg.role {
             MessageRole::User => messages.push(Message::user(msg.content.to_string())),
             MessageRole::Assistant => messages.push(Message::assistant(msg.content.to_string())),
-            // Convert any persisted System messages to Assistant for the
+            // Convert non-user transcript records to Assistant for the
             // same reason as the summary above: the templates that reject
-            // mid-stream System tolerate Assistant, and code-symmetry with
+            // mid-stream System/tool roles tolerate Assistant, and code-symmetry with
             // the summary push keeps the resumed-conversation shape
             // consistent.
             MessageRole::System => messages.push(Message::assistant(msg.content.to_string())),
+            MessageRole::ToolCall => {
+                messages.push(Message::assistant(format!("[ToolCall]: {}", msg.content)))
+            }
+            MessageRole::ToolResult => {
+                messages.push(Message::assistant(format!("[ToolResult]: {}", msg.content)))
+            }
+            MessageRole::SubagentToolCall => messages.push(Message::assistant(format!(
+                "[SubagentToolCall]: {}",
+                msg.content
+            ))),
         }
     }
 

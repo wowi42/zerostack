@@ -14,6 +14,7 @@ use crate::permission::ask::AskSender;
 use crate::permission::checker::PermCheck;
 use crate::provider::{AnyAgent, AnyClient};
 use crate::sandbox::Sandbox;
+use crate::session::storage::save_session;
 use crate::session::{MessageRole, Session};
 use crate::ui::events::sanitize_output;
 use crate::ui::renderer::Renderer;
@@ -182,6 +183,8 @@ pub async fn handle_agent_event(
             }
             response_buf.clear();
             *response_start_line = None;
+            session.add_tool_call(&name, &args);
+            save_session_if_enabled(session, cli, renderer)?;
             let line = format!(
                 "◈ {}",
                 crate::ui::utils::format_tool_call_summary(&name, &args)
@@ -189,6 +192,8 @@ pub async fn handle_agent_event(
             renderer.write_line(&sanitize_output(&line), C_TOOL)?;
         }
         AgentEvent::SubagentToolCall { name, args } => {
+            session.add_subagent_tool_call(&name, &args);
+            save_session_if_enabled(session, cli, renderer)?;
             let line = format!(
                 "⌥ {}",
                 crate::ui::utils::format_tool_call_summary(&name, &args)
@@ -196,6 +201,8 @@ pub async fn handle_agent_event(
             renderer.write_line(&sanitize_output(&line), C_TOOL)?;
         }
         AgentEvent::ToolResult { name, output } => {
+            session.add_tool_result(&name, &output);
+            save_session_if_enabled(session, cli, renderer)?;
             if name == "todo_write" {
                 let list = TODO_LIST.lock().unwrap_or_else(|e| e.into_inner());
                 if list.is_empty() {
@@ -343,7 +350,21 @@ pub async fn handle_agent_event(
             *agent_line_started = false;
             response_buf.clear();
             *response_start_line = None;
+            save_session_if_enabled(session, cli, renderer)?;
         }
+    }
+    Ok(())
+}
+
+fn save_session_if_enabled(
+    session: &Session,
+    cli: &Cli,
+    renderer: &mut Renderer,
+) -> anyhow::Result<()> {
+    if !cli.no_session
+        && let Err(e) = save_session(session)
+    {
+        renderer.write_line(&format!("warning: failed to save session: {}", e), C_ERROR)?;
     }
     Ok(())
 }
@@ -466,7 +487,7 @@ async fn handle_agent_done(
     }
 
     if !cli.no_session
-        && let Err(e) = crate::session::storage::save_session(session)
+        && let Err(e) = save_session(session)
     {
         renderer.write_line(&format!("warning: failed to save session: {}", e), C_ERROR)?;
     }

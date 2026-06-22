@@ -3,7 +3,7 @@ use compact_str::CompactString;
 use crossterm::style::Color;
 
 use crate::cli::Cli;
-use crate::config::Config;
+use crate::config::{Config, ResolvedShowToolDetails};
 use crate::context::ContextFiles;
 use crate::session::{MessageRole, Session};
 use crate::ui::markdown;
@@ -63,8 +63,13 @@ pub fn render_session(
             MessageRole::User => (">", Color::Green),
             MessageRole::Assistant => ("<", Color::White),
             MessageRole::System => ("#", Color::DarkGrey),
+            MessageRole::ToolCall => ("◈", super::C_TOOL),
+            MessageRole::ToolResult => ("◈ result", Color::DarkGrey),
+            MessageRole::SubagentToolCall => ("⌥", super::C_TOOL),
         };
-        if msg.role == MessageRole::Assistant {
+        if msg.role == MessageRole::ToolResult {
+            render_tool_result(renderer, &msg.content, cfg)?;
+        } else if msg.role == MessageRole::Assistant {
             let max_width = renderer.line_width();
             let mut styled = markdown::markdown_to_styled(&msg.content, max_width);
             if !styled.is_empty() {
@@ -105,6 +110,58 @@ pub fn render_session(
         renderer.write_line("Run /welcome or /help to get started", Color::White)?;
         renderer.write_line("", Color::White)?;
         renderer.write_line("", Color::White)?;
+    }
+    Ok(())
+}
+
+fn render_tool_result(renderer: &mut Renderer, content: &str, cfg: &Config) -> anyhow::Result<()> {
+    let output = content
+        .split_once(":\n")
+        .map(|(_, output)| output)
+        .unwrap_or(content);
+    let show_details = cfg
+        .show_tool_details
+        .as_ref()
+        .map(|s| s.resolve())
+        .unwrap_or(ResolvedShowToolDetails::Limited(3));
+    match show_details {
+        ResolvedShowToolDetails::Off => {
+            renderer.write_line(
+                "◈ result hidden by show_tool_details=false",
+                Color::DarkGrey,
+            )?;
+        }
+        ResolvedShowToolDetails::Limited(max_lines) => {
+            let sanitized = sanitize_output(output);
+            let char_count = sanitized.chars().count();
+            let lines: Vec<&str> = sanitized.lines().collect();
+            if lines.len() > max_lines {
+                let shown = lines[..max_lines].join("\n");
+                renderer.write_line(
+                    &format!(
+                        "◈ result ({} chars, {} lines, showing {}):\n{}",
+                        char_count,
+                        lines.len(),
+                        max_lines,
+                        shown
+                    ),
+                    Color::DarkGrey,
+                )?;
+            } else {
+                renderer.write_line(
+                    &format!("◈ result ({} chars):\n{}", char_count, sanitized),
+                    Color::DarkGrey,
+                )?;
+            }
+        }
+        ResolvedShowToolDetails::Unlimited => {
+            let sanitized = sanitize_output(output);
+            let char_count = sanitized.chars().count();
+            renderer.write_line(
+                &format!("◈ result ({} chars):\n{}", char_count, sanitized),
+                Color::DarkGrey,
+            )?;
+        }
     }
     Ok(())
 }
