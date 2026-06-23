@@ -187,6 +187,30 @@ impl Config {
         self.custom_providers.clone().unwrap_or_default()
     }
 
+    /// Whether requests for `provider` go through the Anthropic-native API
+    /// route. This is the route that enables prompt caching and reports
+    /// `input_tokens` *excluding* cached/cache-creation tokens, so it is the
+    /// only one whose context accounting must add the cache fields back in
+    /// (see [`Session::real_input_tokens`](crate::session::Session::real_input_tokens)).
+    ///
+    /// Keyed on the resolved provider *kind*, not the user-facing name: a
+    /// custom provider registered under any name but with
+    /// `provider_type = "anthropic"` still hits the native route, while
+    /// OpenRouter — even when serving a Claude model — normalizes usage to the
+    /// OpenAI shape (`input_tokens` already includes cached) and must not.
+    pub fn is_anthropic_native(&self, provider: &str) -> bool {
+        let kind_name = self
+            .custom_providers
+            .as_ref()
+            .and_then(|m| m.get(provider))
+            .map(|c| c.provider_type.as_str())
+            .unwrap_or(provider);
+        matches!(
+            crate::auth::ProviderKind::from_name(kind_name),
+            Some(crate::auth::ProviderKind::Anthropic)
+        )
+    }
+
     pub fn resolve_context_window(&self, provider: &str, model_id: &str) -> u64 {
         if let Some(cw) = self.context_window {
             return cw;

@@ -24,11 +24,15 @@ pub enum AgentEvent {
     CompletionCall {
         input_tokens: u64,
         output_tokens: u64,
+        cached_input_tokens: u64,
+        cache_creation_input_tokens: u64,
     },
     Done {
         response: CompactString,
         input_tokens: u64,
         output_tokens: u64,
+        cached_input_tokens: u64,
+        cache_creation_input_tokens: u64,
     },
 }
 

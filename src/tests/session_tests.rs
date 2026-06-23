@@ -84,6 +84,23 @@ fn calibration_ignores_zero_usage() {
     assert_eq!(s.effective_context_tokens(), s.total_estimated_tokens);
 }
 
+#[test]
+fn real_input_tokens_native_route_adds_cache_fields() {
+    // The Anthropic-native route reports input_tokens excluding cached/
+    // cache-creation tokens, so the real prompt size is the sum of all three.
+    // A cache hit (input ~0, cached large) must NOT collapse the measured context.
+    assert_eq!(Session::real_input_tokens(true, 10, 7000, 0), 7010);
+    assert_eq!(Session::real_input_tokens(true, 0, 7000, 0), 7000);
+    assert_eq!(Session::real_input_tokens(true, 50, 0, 6000), 6050);
+}
+
+#[test]
+fn real_input_tokens_non_native_uses_input_only() {
+    // OpenAI/Gemini/OpenRouter fold the cached subset into input_tokens and
+    // report no cache-creation; adding the cache fields would double-count.
+    assert_eq!(Session::real_input_tokens(false, 7000, 5600, 0), 7000);
+}
+
 // Helper: a session with `n` ASCII messages of `len` chars each, so every
 // message has a predictable estimated_tokens == len/4.
 fn session_with_messages(n: usize, len: usize) -> Session {

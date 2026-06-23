@@ -1,4 +1,48 @@
 use crate::config::Config;
+use crate::config::types::CustomProviderConfig;
+use compact_str::CompactString;
+use std::collections::HashMap;
+
+fn custom_provider(provider_type: &str) -> CustomProviderConfig {
+    CustomProviderConfig {
+        provider_type: CompactString::new(provider_type),
+        base_url: "https://gateway.example.com".to_string(),
+        api_key_env: None,
+        danger_accept_invalid_certs: None,
+        api_style: None,
+        headers: HashMap::new(),
+        timeout_secs: None,
+        model: None,
+    }
+}
+
+#[test]
+fn is_anthropic_native_builtin_providers() {
+    let cfg = Config::default();
+    assert!(cfg.is_anthropic_native("anthropic"));
+    assert!(cfg.is_anthropic_native("Anthropic")); // case-insensitive
+    for p in ["openai", "gemini", "google", "openrouter", "ollama"] {
+        assert!(!cfg.is_anthropic_native(p), "{p} is not anthropic-native");
+    }
+}
+
+#[test]
+fn is_anthropic_native_resolves_custom_provider_type() {
+    // A custom gateway named anything but routing through the Anthropic-native
+    // protocol must be treated as anthropic-native (so cache fields are added),
+    // while an OpenAI-style gateway must not.
+    let mut providers = HashMap::new();
+    providers.insert("my-claude-proxy".to_string(), custom_provider("anthropic"));
+    providers.insert("my-oai-gateway".to_string(), custom_provider("openai"));
+    let cfg = Config {
+        custom_providers: Some(providers),
+        ..Config::default()
+    };
+    assert!(cfg.is_anthropic_native("my-claude-proxy"));
+    assert!(!cfg.is_anthropic_native("my-oai-gateway"));
+    // Unknown name with no custom entry falls back to the literal kind.
+    assert!(!cfg.is_anthropic_native("totally-unknown"));
+}
 
 #[test]
 fn mid_turn_threshold_unset_by_default() {

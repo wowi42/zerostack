@@ -1924,7 +1924,12 @@ pub async fn run_interactive(
                 let loop_running = loop_state.as_ref().is_some_and(|ls| ls.active);
                 #[cfg(not(feature = "loop"))]
                 let loop_running = false;
-                if let AgentEvent::CompletionCall { input_tokens, .. } = &event
+                if let AgentEvent::CompletionCall {
+                    input_tokens,
+                    cached_input_tokens,
+                    cache_creation_input_tokens,
+                    ..
+                } = &event
                     && is_running
                     && !loop_running
                     && !cli.no_session
@@ -1932,7 +1937,16 @@ pub async fn run_interactive(
                     && session.context_window > 0
                     && let Some(threshold) = cfg.resolve_mid_turn_compact_threshold()
                 {
-                    let pressure = *input_tokens as f64 / session.context_window as f64;
+                    // Use the cache-inclusive prompt size so Anthropic cache hits
+                    // (input_tokens excludes cached/cache-creation) don't understate
+                    // real context pressure and suppress mid-turn compaction.
+                    let real_input_tokens = crate::session::Session::real_input_tokens(
+                        cfg.is_anthropic_native(&session.provider),
+                        *input_tokens,
+                        *cached_input_tokens,
+                        *cache_creation_input_tokens,
+                    );
+                    let pressure = real_input_tokens as f64 / session.context_window as f64;
                     if pressure > threshold {
                         if awaiting_compaction_relief {
                             // We already compacted this turn and the very next
@@ -1940,7 +1954,7 @@ pub async fn run_interactive(
                             // exceeds the budget, so compacting again is futile.
                             // Stop the turn and show the user the arithmetic.
                             stop_turn_context_exhausted(
-                                *input_tokens, threshold, &mut renderer, session, cfg,
+                                real_input_tokens, threshold, &mut renderer, session, cfg,
                                 &mut agent_rx, &mut main_abort, &mut is_running,
                                 &status_signals, &mut turn_trace, &mut response_buf,
                                 &mut response_start_line, &mut agent_line_started,

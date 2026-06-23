@@ -140,6 +140,37 @@ impl Session {
         std::mem::take(&mut self.pending_media)
     }
 
+    /// The true prompt size occupying the context window, normalizing across
+    /// providers' differing cache-usage reporting.
+    ///
+    /// The Anthropic-native route reports `input_tokens` counting *only* the
+    /// uncached portion of the prompt; the cache-read and cache-creation tokens
+    /// are reported in separate fields even though they still occupy the context
+    /// window. So there the real prompt size is the sum of all three. The
+    /// OpenAI, Gemini and OpenRouter shapes instead fold the cached subset into
+    /// `input_tokens` and report no cache-creation, so `input_tokens` is already
+    /// the full prompt size and adding the cache fields would double-count.
+    ///
+    /// `anthropic_native` must be the *resolved protocol route*, not a literal
+    /// provider-name comparison — a custom gateway with `provider_type =
+    /// "anthropic"` uses the native route under a different name, while
+    /// OpenRouter serving a Claude model does not. Compute it with
+    /// [`Config::is_anthropic_native`](crate::config::Config::is_anthropic_native).
+    pub fn real_input_tokens(
+        anthropic_native: bool,
+        input_tokens: u64,
+        cached_input_tokens: u64,
+        cache_creation_input_tokens: u64,
+    ) -> u64 {
+        if anthropic_native {
+            input_tokens
+                .saturating_add(cached_input_tokens)
+                .saturating_add(cache_creation_input_tokens)
+        } else {
+            input_tokens
+        }
+    }
+
     pub fn set_calibration(&mut self, input_tokens: u64, output_tokens: u64) {
         if input_tokens == 0 {
             return;
