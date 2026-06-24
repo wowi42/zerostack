@@ -123,3 +123,34 @@ fn context_exhausted_report_math() {
     );
     assert!(joined.contains("hold 18000+ tokens"), "{joined}");
 }
+
+#[test]
+fn catalog_context_window_reads_known_model() {
+    // deepseek-v4-pro is a 1M-context model in the baked openrouter catalog.
+    assert_eq!(
+        Config::catalog_context_window("openrouter", "deepseek/deepseek-v4-pro"),
+        Some(1_048_576)
+    );
+}
+
+#[test]
+fn catalog_context_window_none_for_unknown() {
+    assert!(Config::catalog_context_window("openrouter", "no/such-model").is_none());
+    // Providers without a baked catalog (custom gateways, ollama) return None.
+    assert!(Config::catalog_context_window("ollama", "llama3.1").is_none());
+}
+
+#[test]
+fn resolve_context_window_prefers_config_pin_over_catalog() {
+    let cfg: Config = serde_json::from_str(r#"{ "context_window": 128000 }"#).unwrap();
+    assert_eq!(
+        cfg.resolve_context_window("openrouter", "deepseek/deepseek-v4-pro"),
+        128_000
+    );
+    // Without a pin, the catalog's 1M wins.
+    let cfg = Config::default();
+    assert_eq!(
+        cfg.resolve_context_window("openrouter", "deepseek/deepseek-v4-pro"),
+        1_048_576
+    );
+}

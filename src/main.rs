@@ -196,6 +196,19 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
+    // A resumed session persisted its context_window when first saved, which can
+    // be stale if the model's catalog entry has changed since (e.g. a model that
+    // grew from 128k to 1M). Re-derive it from the catalog for the session's own
+    // model, unless the user pinned `context_window` in config (then that wins).
+    if cfg.context_window.is_none()
+        && let Some(cw) = config::Config::catalog_context_window(
+            session.provider.as_str(),
+            session.model.as_str(),
+        )
+    {
+        session.update_context_window(cw);
+    }
+
     let client = provider::create_client(
         &provider,
         cli.api_key.as_deref(),

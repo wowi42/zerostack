@@ -226,17 +226,21 @@ impl Config {
         if let Some(cw) = self.context_window {
             return cw;
         }
-        if let Some(entries) = crate::models_catalog::catalog_entries(provider) {
-            for e in entries {
-                if e.id == model_id {
-                    if let Some(cl) = e.context_length {
-                        return cl as u64;
-                    }
-                    break;
-                }
-            }
-        }
-        128_000
+        Self::catalog_context_window(provider, model_id).unwrap_or(128_000)
+    }
+
+    /// The model's context window straight from the static catalog, or `None`
+    /// when the provider/model is not listed (custom gateways, ollama, or an id
+    /// without a `context` entry). Unlike [`resolve_context_window`], this
+    /// ignores the config override and the 128k fallback, so callers can tell a
+    /// real catalog value apart from the default.
+    pub fn catalog_context_window(provider: &str, model_id: &str) -> Option<u64> {
+        let entries = crate::models_catalog::catalog_entries(provider)?;
+        entries
+            .iter()
+            .find(|e| e.id == model_id)
+            .and_then(|e| e.context_length)
+            .map(|cl| cl as u64)
     }
 
     pub fn resolve_reserve_tokens(
