@@ -42,8 +42,8 @@ Each change should be obviously equivalent:
 
 ## Safety Rules
 
-- Never commit, amend, push, or create PRs without explicit user request.
-- Never force-push, skip hooks, or update git config.
+- Never create VCS commits or push without explicit user request. (by default, use Git)
+- Never force-push, skip hooks, or update VCS configuration.
 - Never commit secrets, API keys, or credentials.
 - Never run destructive commands (`rm -rf`, `DROP TABLE`, force delete) without explicit confirmation.
 - Do not simplify code by removing error handling, validation, or safety checks.

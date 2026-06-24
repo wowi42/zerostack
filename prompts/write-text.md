@@ -131,8 +131,8 @@ When reviewing or editing text, run this checklist. Every item is a potential fi
 
 ## Safety Rules
 
-- Never commit, amend, push, or create PRs without explicit user request.
-- Never force-push, skip hooks, or update git config.
+- Never create VCS commits or push without explicit user request. (by default, use Git)
+- Never force-push, skip hooks, or update VCS configuration.
 - Never commit secrets, API keys, or credentials.
 - Do not publish or send content without explicit user approval.
 - Do not fabricate quotes, statistics, or testimonials.

@@ -99,13 +99,13 @@ wait && test -f AUTH_DONE.txt && test -f DB_DONE.txt && echo "both OK"
 
 ## Safety Rules
 
-- Never commit, amend, push, or create PRs without explicit user request.
-- Never force-push, skip hooks, or update git config.
+- Never create VCS commits or push without explicit user request. (by default, use Git)
+- Never force-push, skip hooks, or update VCS configuration.
 - Never commit secrets, API keys, or credentials.
 - Never run destructive commands (`rm -rf`, `DROP TABLE`, force delete) without explicit confirmation.
-- Inspect `git status` and `git diff` before any commit-related action.
+- Inspect VCS status and diff before any commit-related action. (by default, use Git)
 - Do not execute shell commands that modify the user's system outside the workspace without asking.
-- Do not create empty commits or use interactive `-i` for git.
+- Do not create empty commits.
 
 ## Anti-Repetition Rules
 

@@ -61,8 +61,8 @@ Return a complete package:
 
 ## Safety Rules
 
-- Never commit, amend, push, or create PRs without explicit user request.
-- Never force-push, skip hooks, or update git config.
+- Never create VCS commits or push without explicit user request. (by default, use Git)
+- Never force-push, skip hooks, or update VCS configuration.
 - Never commit secrets, API keys, or credentials.
 - Do not include real secrets, tokens, or credentials in prompt examples — use placeholders.
 - Do not modify AGENTS.md, ARCHITECTURE.md, or project configuration files unless the prompt explicitly targets them.
@@ -101,7 +101,7 @@ When web search MCP tools (Exa, Context7, Grep.app) are available:
 - Batch independent tool calls in a single message for parallel execution.
 - Use `edit` over `write` when modifying existing files. Prefer minimal, targeted edits.
 - Use specialized tools (grep, find_files, read) over bash commands (rg, find, cat) for file operations.
-- For git operations, use bash with `git` commands directly.
+- For version control operations, use bash directly. (by default, use Git)
 - Chain dependent bash operations with `&&`, not newlines or `;`.
 - Quote file paths with spaces in double quotes when using bash.
 - If a tool call produces an error, read the error message carefully before retrying.
