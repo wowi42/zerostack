@@ -9,12 +9,19 @@
   outputs = { self, nixpkgs, flake-utils }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = nixpkgs.legacyPackages.${system};
+        pkgs = nixpkgs.legacyPackages.${system}.appendOverlays [
+          (import ./nix/overlay)
+          (import ./nix/overlay/development.nix)
+        ];
       in
       {
-        packages = {
-          zerostack = pkgs.callPackage ./nix/package/zerostack.nix { };
+        overlays = {
+          default = import ./nix/overlay;
+          development = import ./nix/overlay/development;
+        };
 
+        packages = {
+          inherit (pkgs) zerostack;
           default = self.packages.${system}.zerostack;
         };
 
@@ -27,9 +34,7 @@
           default = self.apps.${system}.zerostack;
         };
 
-        devShells.default = pkgs.callPackage ./nix/package/dev-shell.nix {
-          inherit (self.packages.${system}) zerostack;
-        };
+        devShells.default = pkgs.zerostack-dev-shell;
       }
     );
 }
