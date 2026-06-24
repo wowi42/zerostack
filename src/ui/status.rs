@@ -38,10 +38,16 @@ impl StatusLine {
             .and_then(|n| n.to_str())
             .unwrap_or(&session.working_dir);
 
+        let branch_badge = match &session.git_branch {
+            Some(b) if !b.is_empty() => format!(" ({})", b),
+            _ => String::new(),
+        };
+
         let ctx = session.context_window;
-        let pct = (session.effective_context_tokens() * 100)
-            .checked_div(ctx)
-            .unwrap_or(0);
+        let used = session.effective_context_tokens();
+        let pct = (used * 100).checked_div(ctx).unwrap_or(0);
+        // Current context size and the model's max, e.g. "ctx 12k/1.0M 1%".
+        let ctx_detail = format!(" ctx {}/{} {}%", fmt_tokens(used), fmt_tokens(ctx), pct);
 
         let cost_str = if session.total_cost > 0.0 {
             format!(" ${:.4}", session.total_cost)
@@ -96,14 +102,14 @@ impl StatusLine {
         let chain_badge = chain_label.map(|label| format!(" | {}", label));
 
         let status = format!(
-            "{}{}{} | {}{} | {}%/{}{}{} | {}{}",
+            "{}{}{}{} | {}{} |{}{}{} | {}{}",
             dir,
+            branch_badge,
             cost_str,
             btw_badge,
             session.model,
             loop_badge,
-            pct,
-            fmt_tokens(ctx),
+            ctx_detail,
             token_detail,
             compact_badge,
             state,
