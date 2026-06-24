@@ -171,6 +171,10 @@ pub struct Config {
     pub task_max_turns: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deny_repeated_reads: Option<bool>,
+    /// Show the session cost in the status bar even when it is $0.0000 (e.g. when
+    /// the model has no per-token pricing configured). Default: false.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub show_cost_always: Option<bool>,
     #[cfg(feature = "subagents")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub task_enabled: Option<bool>,
@@ -369,6 +373,10 @@ impl Config {
 
     pub fn resolve_auto_update_themes(&self) -> Option<bool> {
         self.auto_update_themes
+    }
+
+    pub fn resolve_show_cost_always(&self) -> bool {
+        self.show_cost_always.unwrap_or(false)
     }
 
     #[cfg(feature = "mcp")]

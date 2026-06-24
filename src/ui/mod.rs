@@ -6,7 +6,7 @@ mod permission_handler;
 pub(crate) mod pickers;
 pub(crate) mod renderer;
 pub(crate) mod slash;
-mod status;
+pub(crate) mod status;
 mod terminal;
 pub(crate) mod utils;
 
@@ -722,6 +722,9 @@ pub async fn run_interactive(
     #[cfg(feature = "advisor")] mut handoff_rx: Option<crate::extras::advisor::HandoffReceiver>,
 ) -> anyhow::Result<()> {
     let _guard = TerminalGuard::new()?;
+
+    // Display preference: whether the status bar shows the cost even at $0.0000.
+    session.show_cost_always = cfg.resolve_show_cost_always();
 
     #[cfg(feature = "mcp")]
     let mut mcp_manager: Option<McpClientManager> = None;

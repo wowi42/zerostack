@@ -52,6 +52,8 @@ mod singleflight_tests;
 mod slash_add_tests;
 #[cfg(test)]
 mod slash_init_tests;
+#[cfg(test)]
+mod status_tests;
 #[cfg(all(test, feature = "subagents"))]
 mod subagents_tests;
 #[cfg(test)]

@@ -66,6 +66,10 @@ pub struct Session {
     #[cfg(feature = "multimodal")]
     #[serde(skip)]
     pub pending_media: Vec<crate::extras::multimodal::MediaAttachment>,
+    /// Display preference (set from config at startup, not persisted): show the
+    /// session cost in the status bar even when it is $0.0000.
+    #[serde(skip)]
+    pub show_cost_always: bool,
 }
 
 impl Session {
@@ -121,6 +125,7 @@ impl Session {
             permission_allowlist: Vec::new(),
             #[cfg(feature = "multimodal")]
             pending_media: Vec::new(),
+            show_cost_always: false,
         }
     }
 

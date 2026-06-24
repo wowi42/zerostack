@@ -43,7 +43,7 @@ impl StatusLine {
             .checked_div(ctx)
             .unwrap_or(0);
 
-        let cost_str = if session.total_cost > 0.0 {
+        let cost_str = if session.total_cost > 0.0 || session.show_cost_always {
             format!(" ${:.4}", session.total_cost)
         } else {
             String::new()
