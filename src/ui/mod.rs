@@ -336,22 +336,20 @@ type PrebuildPayload = AnyAgent;
 
 /// If the background prebuild hasn't delivered yet, block until it does.
 #[cfg(feature = "mcp")]
-fn resolve_prebuild<'a>(
+async fn resolve_prebuild<'a>(
     agent: &'a mut Option<AnyAgent>,
     mcp_manager: &'a mut Option<McpClientManager>,
     prebuild_rx: &'a mut Option<mpsc::Receiver<PrebuildPayload>>,
-) -> impl std::future::Future<Output = ()> + 'a {
-    async move {
-        if agent.is_some() {
-            return;
+) {
+    if agent.is_some() {
+        return;
+    }
+    if let Some(rx) = prebuild_rx.as_mut() {
+        if let Some((a, mcp)) = rx.recv().await {
+            *agent = Some(a);
+            *mcp_manager = mcp;
         }
-        if let Some(rx) = prebuild_rx.as_mut() {
-            if let Some((a, mcp)) = rx.recv().await {
-                *agent = Some(a);
-                *mcp_manager = mcp;
-            }
-            *prebuild_rx = None;
-        }
+        *prebuild_rx = None;
     }
 }
 
@@ -2119,8 +2117,8 @@ pub async fn run_interactive(
             }
             else => {
                 // Poll the background prebuild; if it just completed, stash it.
-                if let Some(rx) = prebuild_rx.as_mut() {
-                    if let Ok(payload) = rx.try_recv() {
+                if let Some(rx) = prebuild_rx.as_mut()
+                    && let Ok(payload) = rx.try_recv() {
                         #[cfg(feature = "mcp")]
                         {
                             agent = Some(payload.0);
@@ -2132,7 +2130,6 @@ pub async fn run_interactive(
                         }
                         prebuild_rx = None;
                     }
-                }
                 tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
             }
         }
