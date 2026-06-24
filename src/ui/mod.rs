@@ -725,6 +725,10 @@ pub async fn run_interactive(
 
     // Display preference: whether the status bar shows the cost even at $0.0000.
     session.show_cost_always = cfg.resolve_show_cost_always();
+    // Status-bar git branch: seed now, then refresh on a throttle in the loop
+    // (covers worktree switches and external `git checkout` without per-render IO).
+    session.refresh_git_branch();
+    let mut last_branch_check = std::time::Instant::now();
 
     #[cfg(feature = "mcp")]
     let mut mcp_manager: Option<McpClientManager> = None;
@@ -1030,6 +1034,10 @@ pub async fn run_interactive(
     }
 
     loop {
+        if last_branch_check.elapsed() >= std::time::Duration::from_secs(1) {
+            session.refresh_git_branch();
+            last_branch_check = std::time::Instant::now();
+        }
         tokio::select! {
             Some(ev) = user_rx.recv() => {
                 match ev {

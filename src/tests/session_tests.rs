@@ -304,3 +304,16 @@ fn compacted_context_returns_summary_after_compress() {
     assert_eq!(summary, Some("the summary"));
     assert_eq!(index, 1);
 }
+
+#[test]
+fn detect_git_branch_in_repo_returns_nonempty() {
+    let b = Session::detect_git_branch(env!("CARGO_MANIFEST_DIR"));
+    assert!(b.is_some(), "repo root should resolve a branch or commit");
+    assert!(!b.unwrap().is_empty());
+}
+
+#[test]
+fn detect_git_branch_outside_repo_is_none() {
+    let p = std::env::temp_dir().join("zerostack-definitely-not-a-repo-xyz123");
+    assert!(Session::detect_git_branch(p.to_str().unwrap()).is_none());
+}

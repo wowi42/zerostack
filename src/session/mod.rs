@@ -70,6 +70,10 @@ pub struct Session {
     /// session cost in the status bar even when it is $0.0000.
     #[serde(skip)]
     pub show_cost_always: bool,
+    /// Current git branch of `working_dir`, for the status bar. Refreshed at
+    /// runtime, not persisted.
+    #[serde(skip)]
+    pub git_branch: Option<CompactString>,
 }
 
 impl Session {
@@ -126,7 +130,46 @@ impl Session {
             #[cfg(feature = "multimodal")]
             pending_media: Vec::new(),
             show_cost_always: false,
+            git_branch: None,
         }
+    }
+
+    /// Read the current git branch for `dir`, or `None` outside a repo / on a
+    /// detached HEAD (then a short commit hash is returned instead). Reads
+    /// `.git/HEAD` directly (cheap) rather than spawning git, and follows the
+    /// `.git` file pointer used by worktrees and submodules.
+    pub fn detect_git_branch(dir: &str) -> Option<CompactString> {
+        use std::path::{Path, PathBuf};
+        let dir_path = Path::new(dir);
+        let dot_git = dir_path.join(".git");
+        let gitdir = if dot_git.is_dir() {
+            dot_git
+        } else if dot_git.is_file() {
+            let content = std::fs::read_to_string(&dot_git).ok()?;
+            let rel = content.strip_prefix("gitdir:")?.trim();
+            let p = PathBuf::from(rel);
+            if p.is_absolute() { p } else { dir_path.join(p) }
+        } else {
+            return None;
+        };
+        let head = std::fs::read_to_string(gitdir.join("HEAD")).ok()?;
+        let head = head.trim();
+        if let Some(rest) = head.strip_prefix("ref:") {
+            let r = rest.trim();
+            Some(CompactString::new(
+                r.strip_prefix("refs/heads/").unwrap_or(r),
+            ))
+        } else if !head.is_empty() {
+            // Detached HEAD: show a short commit hash.
+            Some(CompactString::new(&head[..head.len().min(8)]))
+        } else {
+            None
+        }
+    }
+
+    /// Refresh [`git_branch`](Self::git_branch) from the current `working_dir`.
+    pub fn refresh_git_branch(&mut self) {
+        self.git_branch = Self::detect_git_branch(&self.working_dir);
     }
 
     pub fn add_message(&mut self, role: MessageRole, content: &str) {
