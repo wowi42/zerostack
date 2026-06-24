@@ -1,5 +1,5 @@
 {% set name = "zerostack" %}
-{% set version = "1.5.0" %}
+{% set version = "1.5.1-rc1" %}
 
 package:
   name: {{ name }}
