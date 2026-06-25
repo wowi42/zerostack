@@ -78,6 +78,15 @@ pub struct Session {
     /// Computed only when the statusline uses a git change/status item. Not persisted.
     #[serde(skip)]
     pub git_status: Option<GitStatus>,
+    /// Estimated tokens for the fixed request overhead that never lives in
+    /// `messages` — system prompt, tool-use preamble, context files, memory.
+    /// Used only before the first real calibration (see
+    /// [`effective_context_tokens`](Self::effective_context_tokens)); once the
+    /// provider reports real usage, the calibration anchor already includes this
+    /// overhead, so it must not be added again. Recomputed at runtime, not
+    /// persisted.
+    #[serde(skip)]
+    pub overhead_tokens: u64,
 }
 
 /// Working-tree summary parsed from `git status --porcelain=v2 --branch`.
@@ -153,6 +162,7 @@ impl Session {
             show_cost_always: false,
             git_branch: None,
             git_status: None,
+            overhead_tokens: 0,
         }
     }
 
@@ -312,9 +322,50 @@ impl Session {
         self.calibrated_msg_count = 0;
     }
 
+    /// Truncate the conversation to `new_len` messages while keeping the context
+    /// figure accurate (used by `/undo` and the failed-send rollback).
+    ///
+    /// If any removed message was part of the calibration anchor, subtract its
+    /// estimated tokens from the anchor rather than discarding the whole
+    /// calibration. Resetting to a cold estimate would undercount (the estimate
+    /// omits tool schemas), and leaving the anchor untouched would overcount by
+    /// the removed turn — subtracting keeps the figure ≈ the real remaining
+    /// size. Messages beyond the anchor were never in it, so removing them only
+    /// shrinks the estimated tail.
+    pub fn truncate_to(&mut self, new_len: usize) {
+        if new_len >= self.messages.len() {
+            return;
+        }
+        let cal = self.calibrated_msg_count.min(self.messages.len());
+        if self.calibrated_tokens > 0 && new_len < cal {
+            let removed: u64 = self.messages[new_len..cal]
+                .iter()
+                .map(|m| m.estimated_tokens)
+                .sum();
+            self.calibrated_tokens = self.calibrated_tokens.saturating_sub(removed);
+            self.calibrated_msg_count = new_len;
+        }
+        self.messages.truncate(new_len);
+        self.total_estimated_tokens = self.messages.iter().map(|m| m.estimated_tokens).sum();
+    }
+
+    /// True while the context figure is still an estimate — no provider usage
+    /// has been reported yet (or it was reset by `/clear`). The status bar marks
+    /// the estimated value so the snap to the real number on the first response
+    /// reads as a refinement rather than a surprise.
+    pub fn ctx_is_estimated(&self) -> bool {
+        self.calibrated_tokens == 0
+    }
+
     pub fn effective_context_tokens(&self) -> u64 {
         if self.calibrated_tokens == 0 {
-            return self.total_estimated_tokens;
+            // No real usage yet: per-message estimates cover only `messages`, so
+            // add the fixed overhead (system prompt, tools, context files) that
+            // every request also carries. After calibration this overhead is
+            // already inside the anchor, so it is not added in that branch.
+            return self
+                .overhead_tokens
+                .saturating_add(self.total_estimated_tokens);
         }
         let start = self.calibrated_msg_count.min(self.messages.len());
         let delta: u64 = self.messages[start..]

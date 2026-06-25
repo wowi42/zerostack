@@ -26,7 +26,7 @@ use super::{C_AGENT, C_ERROR, C_TOOL, apply_current_prompt_mode};
 pub async fn ensure_agent(
     agent: &mut Option<AnyAgent>,
     client: &AnyClient,
-    session: &Session,
+    session: &mut Session,
     cli: &Cli,
     cfg: &Config,
     context: &ContextFiles,
@@ -58,6 +58,9 @@ pub async fn ensure_agent(
         )
         .await,
     );
+    // Keep the pre-calibration context estimate in sync with the preamble we
+    // just built (system prompt + tools + context files).
+    session.overhead_tokens = crate::agent::builder::estimate_overhead(context, reasoning_enabled);
 }
 
 #[cfg(not(feature = "mcp"))]
@@ -65,7 +68,7 @@ pub async fn ensure_agent(
 pub async fn ensure_agent(
     agent: &mut Option<AnyAgent>,
     client: &AnyClient,
-    session: &Session,
+    session: &mut Session,
     cli: &Cli,
     cfg: &Config,
     context: &ContextFiles,
@@ -95,6 +98,9 @@ pub async fn ensure_agent(
         )
         .await,
     );
+    // Keep the pre-calibration context estimate in sync with the preamble we
+    // just built (system prompt + tools + context files).
+    session.overhead_tokens = crate::agent::builder::estimate_overhead(context, reasoning_enabled);
 }
 
 #[allow(clippy::too_many_arguments)]

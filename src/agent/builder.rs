@@ -13,23 +13,12 @@ use crate::permission::ask::AskSender;
 use crate::permission::checker::PermCheck;
 use crate::sandbox::Sandbox;
 
-#[allow(clippy::too_many_arguments)]
-pub async fn build_agent_inner<M: CompletionModel + 'static>(
-    model: M,
-    cli: &Cli,
-    cfg: &Config,
-    context: &ContextFiles,
-    permission: Option<PermCheck>,
-    ask_tx: Option<AskSender>,
-    sandbox: Sandbox,
-    reasoning_enabled: bool,
-    temperature: Option<f64>,
-    // Provider-specific extra body params (e.g. OpenRouter `provider.order` to
-    // pin Claude to the Anthropic direct route so `cache_control` is honored).
-    // `None` for providers that need no extra routing.
-    additional_params: Option<serde_json::Value>,
-    #[cfg(feature = "mcp")] mcp_manager: Option<&McpClientManager>,
-) -> Agent<M> {
+/// Assemble the system-prompt preamble every request carries: the base
+/// `SYSTEM_PROMPT`, tool-use guidance, context files (AGENTS.md, ARCHITECTURE.md,
+/// active mode prompt), working directory, `/add`ed files, memory, and the user
+/// `SUFFIX.md`. Extracted from [`build_agent_inner`] so its token cost can be
+/// estimated (see [`estimate_overhead`]) without building an `Agent`.
+pub fn build_preamble(context: &ContextFiles, reasoning_enabled: bool) -> String {
     let reasoning_prefix = if reasoning_enabled {
         "You reason carefully and think step-by-step.\n\n"
     } else {
@@ -124,6 +113,35 @@ pub async fn build_agent_inner<M: CompletionModel + 'static>(
         preamble.push_str("\n\n---\n\n");
         preamble.push_str(s);
     }
+    preamble
+}
+
+/// Estimate the token cost of the fixed request overhead (the preamble from
+/// [`build_preamble`]). Stored on the session and added to the context figure
+/// before the first real calibration. Does not yet include tool-schema tokens;
+/// the provider's first usage report folds those into the calibration anchor.
+pub fn estimate_overhead(context: &ContextFiles, reasoning_enabled: bool) -> u64 {
+    crate::session::Session::estimate_tokens(&build_preamble(context, reasoning_enabled))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn build_agent_inner<M: CompletionModel + 'static>(
+    model: M,
+    cli: &Cli,
+    cfg: &Config,
+    context: &ContextFiles,
+    permission: Option<PermCheck>,
+    ask_tx: Option<AskSender>,
+    sandbox: Sandbox,
+    reasoning_enabled: bool,
+    temperature: Option<f64>,
+    // Provider-specific extra body params (e.g. OpenRouter `provider.order` to
+    // pin Claude to the Anthropic direct route so `cache_control` is honored).
+    // `None` for providers that need no extra routing.
+    additional_params: Option<serde_json::Value>,
+    #[cfg(feature = "mcp")] mcp_manager: Option<&McpClientManager>,
+) -> Agent<M> {
+    let preamble = build_preamble(context, reasoning_enabled);
 
     let mut builder = AgentBuilder::new(model).preamble(&preamble);
 

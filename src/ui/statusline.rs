@@ -191,7 +191,15 @@ fn resolve_item(item: &str, session: &Session, ctx: &StatusContext) -> Option<St
         "tokens_output" => {
             (session.total_output_tokens > 0).then(|| fmt_tokens(session.total_output_tokens))
         }
-        "context_used" => Some(fmt_tokens(session.effective_context_tokens())),
+        "context_used" => {
+            // A `~` marks the figure as an estimate until the provider reports
+            // real usage (it then snaps to the exact number).
+            let mark = if session.ctx_is_estimated() { "~" } else { "" };
+            Some(format!(
+                "{mark}{}",
+                fmt_tokens(session.effective_context_tokens())
+            ))
+        }
         "context_max" => Some(fmt_tokens(session.context_window)),
         "context_percentage" => {
             let pct = (session.effective_context_tokens() * 100)
