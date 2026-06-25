@@ -51,6 +51,11 @@ pub(crate) fn parse_color(s: &str) -> Option<Color> {
         "yellow" => Some(Color::Yellow),
         "dark_yellow" | "darkyellow" => Some(Color::DarkYellow),
         "blue" => Some(Color::Blue),
+        "light_blue" | "lightblue" => Some(Color::Rgb {
+            r: 0x5f,
+            g: 0xaf,
+            b: 0xff,
+        }),
         "dark_blue" | "darkblue" => Some(Color::DarkBlue),
         "magenta" => Some(Color::Magenta),
         "dark_magenta" | "darkmagenta" => Some(Color::DarkMagenta),

@@ -375,9 +375,42 @@ Each segment has:
 | Field   | Description |
 | ------- | ----------- |
 | `item`  | The element to show (required). See the list below. |
-| `color` | Foreground color: a name (`red`, `dark_cyan`, ...) or `#rrggbb`. Optional. |
+| `color` | Foreground color: a name (`red`, `dark_cyan`, `light_blue`, ...) or `#rrggbb`. Optional. |
 | `bg`    | Background color, same format. Optional. |
 | `text`  | Literal text for the `separator` item. Optional (defaults to a space). |
+| `left`  | Powerline cap glyph drawn before the item. A name (see below) or any literal string. Optional. |
+| `right` | Powerline cap glyph drawn after the item. Optional. |
+| `icon`  | Glyph shown before the value. `true` uses the item's built-in icon; a string sets a custom one (a named icon or a literal glyph). Optional. Needs a Nerd Font. |
+
+Items with a built-in icon (used by `icon = true`): `git_branch`, `git_changes`,
+`git_status`, `cwd`, `model`, `cost`, `context_used`/`context_max`/
+`context_percentage`, `session_name`/`session_id`, `prompt`, `mode`, `loop`,
+`btw`, `compaction`. Named custom icons for `icon = "<name>"`: `branch`,
+`folder`, `chip`, `dollar`, `database`, `hash`, `terminal`, `lock`, `pencil`,
+`sync`. Any other value is used literally, so a raw codepoint works too.
+
+```toml
+[[statusline.lines]]
+segments = [
+  { item = "git_branch", color = "magenta", icon = true },
+  { item = "cwd", color = "light_blue", icon = "folder" },
+]
+```
+
+`left`/`right` caps are drawn in the segment's `bg` color (falling back to its
+`color`) over the status-bar background, so they read as the segment's edge.
+They render only when the item is shown, and need a Nerd Font / Powerline font.
+Named caps: `pl_right` (), `pl_left` (), `pl_right_thin` (),
+`pl_left_thin` (), `pl_round_right` (), `pl_round_left` (),
+`pl_flame_right`, `pl_flame_left`. Any other value is used as-is, so a raw
+codepoint like `""` also works. Example:
+
+```toml
+[[statusline.lines]]
+segments = [
+  { item = "model", color = "white", bg = "#3b4252", left = "pl_round_left", right = "pl_round_right" },
+]
+```
 
 Available items:
 

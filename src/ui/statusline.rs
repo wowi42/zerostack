@@ -11,7 +11,7 @@ use std::sync::OnceLock;
 use crossterm::style::Color;
 
 use crate::config::Config;
-use crate::config::types::{StatusLineConfig, StatusLineLine, StatusLineSegment};
+use crate::config::types::{IconSpec, StatusLineConfig, StatusLineLine, StatusLineSegment};
 use crate::session::{GitStatus, Session};
 use crate::ui::utils::parse_color;
 
@@ -117,15 +117,37 @@ fn build_line(line: &StatusLineLine, session: &Session, ctx: &StatusContext) -> 
                 ));
             }
             item => {
-                if let Some(text) = resolve_item(item, session, ctx) {
-                    raw.push((
-                        StatusSpan::Text {
-                            text,
-                            fg: color(&seg.color),
-                            bg: color(&seg.bg),
-                        },
-                        false,
-                    ));
+                if let Some(mut text) = resolve_item(item, session, ctx) {
+                    if let Some(glyph) = resolve_icon(seg.icon.as_ref(), item) {
+                        text = format!("{glyph} {text}");
+                    }
+                    let fg = color(&seg.color);
+                    let bg = color(&seg.bg);
+                    // Powerline caps: the glyph is drawn in the segment's bg color
+                    // (so it reads as the segment's rounded/triangle edge) over the
+                    // status-bar background. Falls back to the fg when no bg is set.
+                    let cap = bg.or(fg);
+                    if let Some(l) = &seg.left {
+                        raw.push((
+                            StatusSpan::Text {
+                                text: powerline_glyph(l),
+                                fg: cap,
+                                bg: None,
+                            },
+                            false,
+                        ));
+                    }
+                    raw.push((StatusSpan::Text { text, fg, bg }, false));
+                    if let Some(r) = &seg.right {
+                        raw.push((
+                            StatusSpan::Text {
+                                text: powerline_glyph(r),
+                                fg: cap,
+                                bg: None,
+                            },
+                            false,
+                        ));
+                    }
                 }
             }
         }
@@ -261,6 +283,74 @@ pub fn format_status(g: &GitStatus) -> String {
     }
 }
 
+/// Resolve a segment's `icon` setting to a glyph: `Auto(true)` uses the item's
+/// built-in icon, a custom string is looked up by name (or used literally), and
+/// anything else yields no icon. Needs a Nerd Font to render.
+fn resolve_icon(icon: Option<&IconSpec>, item: &str) -> Option<String> {
+    match icon {
+        Some(IconSpec::Auto(true)) => item_icon(item).map(|g| g.to_string()),
+        Some(IconSpec::Custom(s)) => Some(icon_glyph(s)),
+        _ => None,
+    }
+}
+
+/// Built-in Nerd Font icon for an item, when one fits.
+pub fn item_icon(item: &str) -> Option<&'static str> {
+    let g = match item {
+        "git_branch" => "\u{e0a0}",                                          //
+        "git_changes" => "\u{f044}",                                         //
+        "git_status" => "\u{f021}",                                          //
+        "cwd" => "\u{f07b}",                                                 //
+        "model" => "\u{f2db}",                                               //
+        "cost" => "\u{f155}",                                                //
+        "context_used" | "context_max" | "context_percentage" => "\u{f1c0}", //
+        "session_name" | "session_id" => "\u{f292}",                         //
+        "prompt" => "\u{f120}",                                              //
+        "mode" => "\u{f023}",                                                //
+        "loop" => "\u{f01e}",                                                //
+        "btw" => "\u{f075}",                                                 //
+        "compaction" => "\u{f066}",                                          //
+        _ => return None,
+    };
+    Some(g)
+}
+
+/// Named icon lookup, with passthrough so any literal glyph also works.
+pub fn icon_glyph(name: &str) -> String {
+    let g = match name {
+        "branch" | "git" => "\u{e0a0}",
+        "folder" | "dir" => "\u{f07b}",
+        "chip" | "model" => "\u{f2db}",
+        "dollar" | "money" => "\u{f155}",
+        "database" | "context" => "\u{f1c0}",
+        "hash" => "\u{f292}",
+        "terminal" => "\u{f120}",
+        "lock" => "\u{f023}",
+        "pencil" | "edit" => "\u{f044}",
+        "sync" | "refresh" => "\u{f021}",
+        other => other,
+    };
+    g.to_string()
+}
+
+/// Resolve a powerline cap name to its glyph, or return the input unchanged so
+/// any literal string (including a raw Nerd Font codepoint) also works. These
+/// glyphs need a Nerd Font / Powerline-patched font to render.
+pub fn powerline_glyph(name: &str) -> String {
+    let g = match name {
+        "pl_right" | "powerline_right" => "\u{e0b0}",   //
+        "pl_left" | "powerline_left" => "\u{e0b2}",     //
+        "pl_right_thin" => "\u{e0b1}",                  //
+        "pl_left_thin" => "\u{e0b3}",                   //
+        "pl_round_right" | "round_right" => "\u{e0b4}", //
+        "pl_round_left" | "round_left" => "\u{e0b6}",   //
+        "pl_flame_right" => "\u{e0c0}",
+        "pl_flame_left" => "\u{e0c2}",
+        other => other,
+    };
+    g.to_string()
+}
+
 pub fn fmt_tokens(n: u64) -> String {
     if n >= 1_000_000 {
         format!("{:.1}M", n as f64 / 1_000_000.0)
@@ -277,20 +367,18 @@ pub fn default_spec() -> StatusLineConfig {
         StatusLineSegment {
             item: item.into(),
             color: c.map(|s| s.into()),
-            bg: None,
-            text: None,
+            ..Default::default()
         }
     }
     fn sep(text: &str) -> StatusLineSegment {
         StatusLineSegment {
             item: "separator".into(),
-            color: None,
-            bg: None,
             text: Some(text.into()),
+            ..Default::default()
         }
     }
     let segments = vec![
-        seg("cwd", Some("blue")),
+        seg("cwd", Some("light_blue")),
         sep(" "),
         seg("git_branch", Some("magenta")),
         sep(" "),
@@ -309,9 +397,7 @@ pub fn default_spec() -> StatusLineConfig {
         seg("tokens_output", Some("cyan")),
         StatusLineSegment {
             item: "flex_separator".into(),
-            color: None,
-            bg: None,
-            text: None,
+            ..Default::default()
         },
         seg("loop", Some("dark_yellow")),
         sep(" "),
