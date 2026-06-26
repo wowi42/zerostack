@@ -102,7 +102,7 @@ impl Tool for ReadTool {
         let content = tokio::fs::read_to_string(&path).await?;
         let total_lines = content.lines().count();
 
-        let end = (offset + limit).min(total_lines);
+        let (start, end) = read_bounds(offset, limit, total_lines);
 
         let es = edit_system();
 
@@ -111,11 +111,11 @@ impl Tool for ReadTool {
                 // Annotate each line with CRC-32 tag
                 content
                     .lines()
-                    .skip(offset)
-                    .take(end - offset)
+                    .skip(start)
+                    .take(end - start)
                     .enumerate()
                     .map(|(i, line)| {
-                        let line_num = offset + i + 1;
+                        let line_num = start + i + 1;
                         let tag = crc32_hex(line.as_bytes());
                         let line_num_width = if total_lines >= 1000 { 4 } else { 3 };
                         format!(
@@ -133,8 +133,8 @@ impl Tool for ReadTool {
                 // Plain text (original behavior)
                 content
                     .lines()
-                    .skip(offset)
-                    .take(end - offset)
+                    .skip(start)
+                    .take(end - start)
                     .collect::<Vec<_>>()
                     .join("\n")
             }
@@ -147,7 +147,7 @@ impl Tool for ReadTool {
                     "File: {} ({} lines total, lines {}-{}) [CRC: {}]\n\n{}",
                     path,
                     total_lines,
-                    offset + 1,
+                    display_start(start, total_lines),
                     end,
                     file_crc,
                     excerpt
@@ -158,7 +158,7 @@ impl Tool for ReadTool {
                     "File: {} ({} lines total, showing lines {}-{})\n\n{}",
                     path,
                     total_lines,
-                    offset + 1,
+                    display_start(start, total_lines),
                     end,
                     excerpt
                 )
@@ -170,7 +170,7 @@ impl Tool for ReadTool {
             format!(
                 "{}\n\n[truncated after {} lines — {} more lines (lines {}-{}); re-call with offset/limit to see more]",
                 info,
-                end - offset,
+                end - start,
                 remaining,
                 end + 1,
                 total_lines,
@@ -185,5 +185,35 @@ impl Tool for ReadTool {
         };
 
         Ok(info)
+    }
+}
+
+fn read_bounds(offset: usize, limit: usize, total_lines: usize) -> (usize, usize) {
+    let start = offset.min(total_lines);
+    let end = start.saturating_add(limit).min(total_lines);
+    (start, end)
+}
+
+fn display_start(start: usize, total_lines: usize) -> usize {
+    if total_lines == 0 { 0 } else { start + 1 }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{display_start, read_bounds};
+
+    #[test]
+    fn read_bounds_clamps_offset_past_eof() {
+        assert_eq!(read_bounds(20, 10, 5), (5, 5));
+    }
+
+    #[test]
+    fn read_bounds_uses_requested_window_inside_file() {
+        assert_eq!(read_bounds(2, 3, 10), (2, 5));
+    }
+
+    #[test]
+    fn display_start_handles_empty_file() {
+        assert_eq!(display_start(0, 0), 0);
     }
 }
