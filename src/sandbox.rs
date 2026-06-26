@@ -89,6 +89,20 @@ impl Sandbox {
         for (k, v) in essential_env() {
             cmd.arg("--setenv").arg(k).arg(v);
         }
+        match std::fs::canonicalize("/etc/resolv.conf") {
+            Ok(target) => {
+                cmd.arg("--ro-bind-try");
+                cmd.arg(target);
+                cmd.arg("/etc/resolv.conf");
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "sandbox: no resolver file could be mounted: could not resolve /etc/resolv.conf: {}",
+                    e
+                );
+            }
+        }
+        // must bind /etc/resolv.conf before /.
         cmd.args(["--ro-bind", "/", "/", "--bind"]);
         cmd.arg(cwd.as_os_str());
         cmd.arg(cwd.as_os_str());
@@ -103,21 +117,6 @@ impl Sandbox {
             "--tmpfs",
             "/tmp",
         ]);
-
-        match std::fs::canonicalize("/etc/resolv.conf") {
-            Ok(target) => {
-                cmd.arg("--ro-bind-try");
-                cmd.arg(target);
-                cmd.arg("/etc/resolv.conf");
-            }
-            Err(e) => {
-                tracing::warn!(
-                    "sandbox: no resolver file could be mounted: could not resolve /etc/resolv.conf: {}",
-                    e
-                );
-            }
-        }
-
         cmd.args([
             "--unshare-ipc",
             "--unshare-pid",

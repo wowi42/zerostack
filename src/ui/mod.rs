@@ -735,6 +735,7 @@ pub async fn run_interactive(
     let mut renderer = Renderer::new()?;
     renderer.set_statusline_height(crate::ui::statusline::line_count());
     renderer.set_monochrome(cli.no_color);
+    renderer.set_chat_margin(cfg.resolve_chat_left_margin());
     if let Some(ref theme_name) = context.current_theme_name {
         if let Some(content) = context.themes.get(theme_name.as_str()) {
             crate::context::themes::apply(content, &mut renderer);

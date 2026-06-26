@@ -136,6 +136,9 @@ pub struct Config {
     /// default layout is used.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub statusline: Option<types::StatusLineConfig>,
+    /// Left padding (columns) for the chat area. Default: 0.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chat_left_margin: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_prompt: Option<CompactString>,
     #[cfg(feature = "git-worktree")]
@@ -267,6 +270,10 @@ impl Config {
 
     pub fn resolve_keep_recent_tokens(&self) -> u64 {
         self.keep_recent_tokens.unwrap_or(10_000)
+    }
+
+    pub fn resolve_chat_left_margin(&self) -> u16 {
+        self.chat_left_margin.unwrap_or(0)
     }
 
     /// Resolves temperature: CLI `--temperature` > quick-model `temperature` >

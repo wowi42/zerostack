@@ -46,3 +46,14 @@ fn copy_to_clipboard_does_not_panic() {
 fn copy_to_clipboard_empty_string() {
     copy_to_clipboard("");
 }
+
+#[test]
+fn chat_margin_reduces_content_width() {
+    let mut r = crate::ui::renderer::Renderer::new().unwrap();
+    let full = r.line_width();
+    r.set_chat_margin(4);
+    assert_eq!(r.line_width(), full - 4);
+    // Zero margin leaves the width unchanged.
+    r.set_chat_margin(0);
+    assert_eq!(r.line_width(), full);
+}
