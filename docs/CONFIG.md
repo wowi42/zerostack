@@ -482,7 +482,7 @@ Example:
 Permission actions are lowercase strings: `allow`, `ask`, or `deny`. Each tool
 rule can be a single action or an object mapping patterns to actions. Supported
 permission tool keys are `bash`, `read`, `write`, `edit`, `grep`, `find_files`,
-`list_dir`, and `write_todo_list`. MCP-backed tools are checked under
+`list_dir`, and `todo_write`. MCP-backed tools are checked under
 `mcp_tool:{server_name}:{tool_name}`. Use `"*"` for the default action,
 `external_directory` for absolute-path rules outside the working directory, and
 `doom_loop` for repeated identical tool calls (default: `ask`). If `bash` is

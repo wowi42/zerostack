@@ -55,7 +55,7 @@ impl PermissionChecker {
             ("grep", &config.grep),
             ("find_files", &config.find_files),
             ("list_dir", &config.list_dir),
-            ("write_todo_list", &config.write_todo_list),
+            ("todo_write", &config.todo_write),
             ("mcp_tool", &config.mcp_tool),
         ] {
             let Some(tp) = tool_perm else { continue };
@@ -312,7 +312,7 @@ impl PermissionChecker {
     }
 
     pub fn check(&mut self, tool: &str, input: &str) -> CheckResult {
-        if tool == "write_todo_list" {
+        if tool == "todo_write" {
             return CheckResult::Allowed;
         }
         if self.allow_all_mcp_calls && tool == "mcp_tool" {
@@ -344,7 +344,7 @@ impl PermissionChecker {
     }
 
     pub fn check_path(&mut self, tool: &str, path: &str) -> CheckResult {
-        if tool == "write_todo_list" {
+        if tool == "todo_write" {
             return CheckResult::Allowed;
         }
 

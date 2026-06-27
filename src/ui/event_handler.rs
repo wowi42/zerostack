@@ -196,7 +196,7 @@ pub async fn handle_agent_event(
             renderer.write_line(&sanitize_output(&line), C_TOOL)?;
         }
         AgentEvent::ToolResult { name, output } => {
-            if name == "write_todo_list" {
+            if name == "todo_write" {
                 let list = TODO_LIST.lock().unwrap_or_else(|e| e.into_inner());
                 if list.is_empty() {
                     renderer.write_line("tasks cleared", Color::DarkGrey)?;

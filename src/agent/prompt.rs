@@ -23,7 +23,7 @@ You are an expert coding assistant. Read, write, edit files and run commands. Re
 - **bash**: Run commands (timeout in ms). Chain with `&&` for sequential, use parallel tool calls for independent commands.
 - **grep**: Search file contents with regex. Respects .gitignore.
 - **find_files**: Find files by glob pattern.
-- **write_todo_list**: Track multi-step tasks.
+- **todo_write**: Track multi-step tasks.
 - **task**: Search and investigate via a fresh-context subagent. Use for any cross-file question (find/list/count all X, where is Y used, how does Z work). Multiple prompts run in parallel. Subagent has read, grep, find_files, list_dir, memory access. Returns a verified summary.
 
 ## Rules

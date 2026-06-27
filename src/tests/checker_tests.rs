@@ -857,10 +857,10 @@ fn yolo_unknown_bash_is_allowed() {
 }
 
 #[test]
-fn yolo_allows_write_todo_list() {
+fn yolo_allows_todo_write() {
     let mut checker = make_checker(SecurityMode::Yolo);
     assert!(matches!(
-        checker.check("write_todo_list", ""),
+        checker.check("todo_write", ""),
         CheckResult::Allowed
     ));
 }
@@ -909,49 +909,49 @@ fn allow_all_mcp_does_not_affect_non_mcp_tools() {
     );
 }
 
-// --- write_todo_list always allowed ---
+// --- todo_write always allowed ---
 
 #[test]
-fn write_todo_list_always_allowed_in_restrictive() {
+fn todo_write_always_allowed_in_restrictive() {
     let mut checker = make_checker(SecurityMode::Restrictive);
     assert!(matches!(
-        checker.check("write_todo_list", ""),
+        checker.check("todo_write", ""),
         CheckResult::Allowed
     ));
 }
 
 #[test]
-fn write_todo_list_always_allowed_in_readonly() {
+fn todo_write_always_allowed_in_readonly() {
     let mut checker = make_checker(SecurityMode::ReadOnly);
     assert!(matches!(
-        checker.check("write_todo_list", ""),
+        checker.check("todo_write", ""),
         CheckResult::Allowed
     ));
 }
 
 #[test]
-fn write_todo_list_always_allowed_in_guarded() {
+fn todo_write_always_allowed_in_guarded() {
     let mut checker = make_checker(SecurityMode::Guarded);
     assert!(matches!(
-        checker.check("write_todo_list", ""),
+        checker.check("todo_write", ""),
         CheckResult::Allowed
     ));
 }
 
 #[test]
-fn write_todo_list_always_allowed_in_yolo() {
+fn todo_write_always_allowed_in_yolo() {
     let mut checker = make_checker(SecurityMode::Yolo);
     assert!(matches!(
-        checker.check("write_todo_list", ""),
+        checker.check("todo_write", ""),
         CheckResult::Allowed
     ));
 }
 
 #[test]
-fn write_todo_list_path_check_always_allowed() {
+fn todo_write_path_check_always_allowed() {
     let mut checker = make_checker(SecurityMode::Restrictive);
     assert!(matches!(
-        checker.check_path("write_todo_list", "/any/path"),
+        checker.check_path("todo_write", "/any/path"),
         CheckResult::Allowed
     ));
 }

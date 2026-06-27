@@ -14,7 +14,7 @@ fn reset_todo_list() {
 async fn definition_name() {
     let tool = WriteTodoList::new(None, None);
     let def = tool.definition(String::new()).await;
-    assert_eq!(def.name, "write_todo_list");
+    assert_eq!(def.name, "todo_write");
 }
 
 #[tokio::test]

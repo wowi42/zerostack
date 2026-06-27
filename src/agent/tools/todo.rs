@@ -31,7 +31,7 @@ impl WriteTodoList {
 }
 
 impl Tool for WriteTodoList {
-    const NAME: &'static str = "write_todo_list";
+    const NAME: &'static str = "todo_write";
 
     type Error = ToolError;
     type Args = TodoWriteArgs;
@@ -39,7 +39,7 @@ impl Tool for WriteTodoList {
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
-            name: "write_todo_list".to_string(),
+            name: "todo_write".to_string(),
             description: "Create or update a structured task list to track progress in the current coding session. Use this for complex multi-step tasks. Replaces any existing todo list.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -64,7 +64,7 @@ impl Tool for WriteTodoList {
     }
 
     async fn call(&self, args: TodoWriteArgs) -> Result<String, ToolError> {
-        let coaching = check_perm(&self.permission, &self.ask_tx, "write_todo_list", "").await?;
+        let coaching = check_perm(&self.permission, &self.ask_tx, "todo_write", "").await?;
 
         let mut list = TODO_LIST.lock().unwrap_or_else(|e| e.into_inner());
         *list = args.todos;
