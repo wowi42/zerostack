@@ -132,6 +132,8 @@ pub struct Config {
     pub permission_modes: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub show_tool_details: Option<ShowToolDetails>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub show_reasoning: Option<bool>,
     /// Configurable status-bar (up to 3 lines). When absent, a built-in
     /// default layout is used.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -380,6 +382,10 @@ impl Config {
 
     pub fn resolve_always_show_welcome(&self) -> bool {
         self.always_show_welcome.unwrap_or(false)
+    }
+
+    pub fn resolve_show_reasoning(&self) -> bool {
+        self.show_reasoning.unwrap_or(true)
     }
 
     pub fn resolve_auto_update_prompts(&self) -> Option<bool> {

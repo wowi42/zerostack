@@ -93,6 +93,20 @@ fn compact_enabled_default_true() {
 }
 
 #[test]
+fn show_reasoning_defaults_on() {
+    assert!(Config::default().resolve_show_reasoning());
+}
+
+#[test]
+fn show_reasoning_can_be_disabled() {
+    let cfg = Config {
+        show_reasoning: Some(false),
+        ..Config::default()
+    };
+    assert!(!cfg.resolve_show_reasoning());
+}
+
+#[test]
 fn context_exhausted_report_math() {
     // window 20000, threshold 0.80 -> ceiling 16000.
     // prompt 18000 -> 90% of window, overflow 18000 - 16000 = 2000.

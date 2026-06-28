@@ -780,7 +780,7 @@ pub async fn run_interactive(
     let mut agent_line_started = false;
     let mut response_buf = String::new();
     let mut response_start_line: Option<usize> = None;
-    let mut show_reasoning = true;
+    let mut show_reasoning = cfg.resolve_show_reasoning();
     let mut reasoning_enabled = true;
     session.reasoning_enabled = reasoning_enabled;
     // Seed the context-overhead estimate so the status bar reflects the system

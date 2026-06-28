@@ -182,6 +182,7 @@ Accepted top-level keys:
 | `sandbox`                 | boolean | Run bash commands in the bubblewrap sandbox. Default: `false`.                                                                                                              |
 | `default_permission_mode` | string  | Permission mode when no mode boolean/CLI flag is set. Accepts: `standard` (default), `restrictive`, `readonly`, `guarded`, `yolo`.                                          |
 | `show_tool_details`       | boolean or integer | Show tool-result previews in the TUI. `false` hides output, `true` shows all lines, an integer limits to that many lines (e.g. `3`). Default: `3`. |
+| `show_reasoning`          | boolean | Show streamed reasoning text in the TUI. Can still be toggled at runtime with `Ctrl+R` or `/reasoning`. Default: `true`. |
 | `statusline`              | table   | Configurable status bar (up to 3 lines of colored segments). When absent, a built-in default layout is used. See Status bar below. |
 | `chat_left_margin`        | integer | Left padding (columns) for the chat area only; input and status rows are unaffected. Default: `0`. |
 | `default_prompt`          | string  | Prompt name to activate on startup. Default: `code`. If the prompt file has a `%%mode=<mode>` first-line directive, the security mode is set automatically (see Prompt directives below). |
