@@ -7,9 +7,7 @@ Minimal coding agent written in Rust, inspired by [pi](https://pi.dev/docs/lates
 
 *blogposts:* [what we built in 2 weeks](https://rocketup.pages.dev/posts/what_we_built_in_2_weeks/) [memory design](https://rocketup.pages.dev/posts/how-zerostack-memory-works/) [subagents design](https://rocketup.pages.dev/posts/how-zerostack-subagents-work/) [xavier's memory analysis](https://xavierforge.dev/en/posts/zerostack-memory-design/)
 
-<a href="https://www.producthunt.com/products/zerostack-coding-agent/reviews/new?utm_source=badge-product_review&utm_medium=badge&utm_source=badge-zerostack&#0045;coding&#0045;agent" target="_blank"><img src="https://api.producthunt.com/widgets/embed-image/v1/product_review.svg?product_id=1236867&theme=light" alt="Zerostack&#0032;Coding&#0032;Agent - A&#0032;minimal&#0032;coding&#0032;agent&#0044;&#0032;with&#0032;a&#0032;bundle&#0032;of&#0032;innovative&#0032;features | Product Hunt" style="width: 250px; height: 54px;" width="250" height="54" /></a>
-
-*note:* Want to support? Consider [donating here](https://ko-fi.com/gidellav); if you are a company interested in sponsoring zerostack, [contact me here](mailto:giuseppe.dellavedova8+sponsor@gmail.com). If you want to support without paying, check out [multistack](https://github.com/gi-dellav/multistack).
+*note:* Want to support? Consider [donating here](https://ko-fi.com/gidellav); if you are a company interested in sponsoring zerostack, [contact me here](mailto:giuseppe.dellavedova8+sponsor@gmail.com).
 
 ## Features
 
@@ -38,6 +36,16 @@ _zerostack_ is one of the smallest and most performant coding agents on the mark
 - Binary size: 26MB
 - RAM footprint: ~16MB on average, with peaks at ~24MB (vs ~300MB with peaks at ~700MB for opencode or other JS-based coding agents)
 - CPU usage: 0.0% on idle, ~1.5% when using tools (measured on an Intel i5 7th gen, vs ~2% on idle and ~20% when working for opencode)
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=gi-dellav%2Fzerostack&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=gi-dellav/zerostack&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=gi-dellav/zerostack&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=gi-dellav/zerostack&type=date&legend=top-left" />
+ </picture>
+</a>
 
 ## Installation
 
