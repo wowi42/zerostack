@@ -196,11 +196,9 @@ impl Sandbox {
         })
         .await
         .is_err()
-        {
-            if let Some(pid) = guard.pid {
+            && let Some(pid) = guard.pid {
                 kill_process_group(pid);
             }
-        }
         let stdout = stdout.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let stderr = stderr.lock().unwrap_or_else(|e| e.into_inner()).clone();
         guard.disarm();
@@ -223,6 +221,7 @@ impl Sandbox {
         }
     }
 
+    #[allow(dead_code)]
     pub fn active_group_count(&self) -> usize {
         self.active_groups
             .lock()

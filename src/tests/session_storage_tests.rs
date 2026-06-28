@@ -1,7 +1,8 @@
 use crate::session::MessageRole;
 use crate::session::Session;
 use crate::session::storage::{
-    delete_session, find_all_sessions, find_sessions_by_prefix, load_suffix, save_session, suffix_path,
+    delete_session, find_all_sessions, find_sessions_by_prefix, load_suffix, save_session,
+    suffix_path,
 };
 use std::env;
 use std::sync::Mutex;
