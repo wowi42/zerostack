@@ -76,7 +76,7 @@ pub fn project_slug(path: &Path) -> String {
 // ---------------------------------------------------------------------------
 // Core store (pure std; logic covered by src/tests/memory_tests.rs)
 // ---------------------------------------------------------------------------
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum WriteTarget {
     LongTerm,
     Scratchpad,
@@ -84,7 +84,7 @@ pub enum WriteTarget {
     Note,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum WriteMode {
     Append,
     Overwrite,
