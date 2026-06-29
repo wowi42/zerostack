@@ -1,0 +1,2 @@
+[tools]
+"cargo:https://github.com/gi-dellav/zerostack" = { version = "branch:main", features = "memory" }
