@@ -1,3 +1,8 @@
+// These tests deliberately hold EDIT_SYSTEM_GUARD across .await points to keep
+// the process-global edit system fixed for the whole async test (see the guard
+// doc below), so the lint does not apply here.
+#![allow(clippy::await_holding_lock)]
+
 use crate::agent::tools::crc::crc32_hex;
 use crate::agent::tools::set_edit_system;
 use crate::agent::tools::{EditArgs, EditOp, edit};
@@ -11,7 +16,6 @@ use rig::tool::Tool;
 /// the system atomically.
 static EDIT_SYSTEM_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-#[must_use]
 fn serialize_edit_system(es: EditSystem) -> std::sync::MutexGuard<'static, ()> {
     let guard = EDIT_SYSTEM_GUARD.lock().unwrap_or_else(|e| e.into_inner());
     set_edit_system(es);

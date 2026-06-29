@@ -111,8 +111,9 @@ fn test_build_prompt_starting_fresh() {
 }
 
 #[test]
+#[allow(clippy::assertions_on_constants)]
 fn test_summary_truncation_constant() {
-    // Ensure we use a reasonable truncation value
+    // Guards against the constant being set to a nonsensical zero value.
     assert!(SUMMARY_TRUNCATION_CHARS > 0);
 }
 

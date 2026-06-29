@@ -986,8 +986,10 @@ fn empty_permission_modes_skips_rules_for_all_modes() {
 
 #[test]
 fn standard_external_dir_allow_rule_overrides_default_ask() {
-    let mut config = PermissionConfig::default();
-    config.external_directory = Some([("/tmp/work/**".to_string(), Action::Allow)].into());
+    let config = PermissionConfig {
+        external_directory: Some([("/tmp/work/**".to_string(), Action::Allow)].into()),
+        ..Default::default()
+    };
     let configs = configs_from(config);
     let mut checker = PermissionChecker::new(
         &configs,
@@ -1006,8 +1008,10 @@ fn standard_external_dir_allow_rule_overrides_default_ask() {
 
 #[test]
 fn standard_external_dir_deny_rule_overrides_default_ask() {
-    let mut config = PermissionConfig::default();
-    config.external_directory = Some([("/etc/**".to_string(), Action::Deny)].into());
+    let config = PermissionConfig {
+        external_directory: Some([("/etc/**".to_string(), Action::Deny)].into()),
+        ..Default::default()
+    };
     let configs = configs_from(config);
     let mut checker = PermissionChecker::new(
         &configs,

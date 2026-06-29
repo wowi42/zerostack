@@ -7,7 +7,7 @@
 
 use crate::extras::archmd;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn temp_dir(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
@@ -21,7 +21,7 @@ fn temp_dir(tag: &str) -> PathBuf {
     dir
 }
 
-fn asked_path(temp: &PathBuf) -> PathBuf {
+fn asked_path(temp: &Path) -> PathBuf {
     temp.join("asked.txt")
 }
 
@@ -168,8 +168,8 @@ fn record_asked_dir_preserves_existing_entries() {
     archmd::record_asked_dir_with_path(&dir_a, &ap).unwrap();
     archmd::record_asked_dir_with_path(&dir_b, &ap).unwrap();
     let content = fs::read_to_string(&ap).unwrap();
-    assert!(content.contains(&dir_a.to_str().unwrap()));
-    assert!(content.contains(&dir_b.to_str().unwrap()));
+    assert!(content.contains(dir_a.to_str().unwrap()));
+    assert!(content.contains(dir_b.to_str().unwrap()));
 }
 
 #[test]

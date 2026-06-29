@@ -44,7 +44,7 @@ fn save_and_find_session_by_prefix() {
     s.add_message(MessageRole::User, "hello");
     save_session(&s).unwrap();
 
-    let found = find_sessions_by_prefix(&s.id[..8].to_string()).unwrap();
+    let found = find_sessions_by_prefix(&s.id[..8]).unwrap();
     assert_eq!(found.len(), 1, "id prefix: {}", &s.id[..8]);
     assert_eq!(found[0].id, s.id);
     assert_eq!(found[0].model.as_str(), "gpt-4");
@@ -66,7 +66,7 @@ fn delete_session_removes_file() {
     save_session(&s).unwrap();
 
     delete_session(&s.id).unwrap();
-    let found = find_sessions_by_prefix(&s.id[..8].to_string()).unwrap();
+    let found = find_sessions_by_prefix(&s.id[..8]).unwrap();
     assert!(found.is_empty());
     drop(env);
 }
@@ -79,7 +79,7 @@ fn save_session_preserves_messages() {
     s.add_message(MessageRole::Assistant, "answer");
     save_session(&s).unwrap();
 
-    let found = find_sessions_by_prefix(&s.id[..8].to_string()).unwrap();
+    let found = find_sessions_by_prefix(&s.id[..8]).unwrap();
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].messages.len(), 2);
     assert_eq!(found[0].messages[0].content, "question");
@@ -98,7 +98,7 @@ fn save_session_preserves_tool_messages() {
     s.add_message(MessageRole::Assistant, "answer");
     save_session(&s).unwrap();
 
-    let found = find_sessions_by_prefix(&s.id[..8].to_string()).unwrap();
+    let found = find_sessions_by_prefix(&s.id[..8]).unwrap();
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].messages.len(), 5);
     assert_eq!(found[0].messages[1].role, MessageRole::ToolCall);
@@ -195,7 +195,7 @@ fn save_session_preserves_cost_fields() {
     s.output_token_cost = 0.00003;
     save_session(&s).unwrap();
 
-    let found = find_sessions_by_prefix(&s.id[..8].to_string()).unwrap();
+    let found = find_sessions_by_prefix(&s.id[..8]).unwrap();
     assert_eq!(
         found.len(),
         1,
@@ -230,7 +230,7 @@ fn save_session_creates_parent_dirs() {
     std::fs::remove_dir_all(&sessions_dir).unwrap();
     let s = Session::new("openai", "gpt-4", 128000);
     save_session(&s).unwrap();
-    let found = find_sessions_by_prefix(&s.id[..8].to_string()).unwrap();
+    let found = find_sessions_by_prefix(&s.id[..8]).unwrap();
     assert_eq!(found.len(), 1);
     drop(env);
 }
