@@ -178,6 +178,7 @@ Accepted top-level keys:
 | `editor`                  | string  | Editor command for `Ctrl+G` (default: `$EDITOR` env var, then `editor`, then `nano`).                                                                                        |
 | `api_keys`                | object  | Map of provider names to API keys (e.g. `"openai": "sk-..."`). Used as fallback when the corresponding env var is not set.                                                   |
 | `quick_models`            | object  | Map of quick-model names to `{ "provider", "model", "reserve_tokens"?, "input_token_cost"?, "output_token_cost"?, "temperature"?, "extra_body"? }`. Can be switched with `/models <name>` or `--quick-model=<name>`. See Provider-specific request body parameters below for `extra_body`. |
+| `prompt_to_model`         | object  | Map of prompt names to quick-model names (e.g. `plan = "glm-52"`). When switching to a prompt, zerostack automatically switches to the corresponding quick model. Empty-string values are treated as "no change". See Prompt-to-model switching below. |
 | `mcp_servers`             | object  | MCP server map when compiled with the `mcp` feature. When omitted, recommended MCPs are auto-configured (see below).                                                   |
 | `enable-exa-mcp`          | boolean | Auto-configure the Exa Web Search MCP server. Default: `true`.                                                                                                         |
 | `enable-context7-mcp`     | boolean | Auto-configure the Context7 MCP server. Default: `false`.                                                                                                              |
@@ -747,6 +748,37 @@ Write well-tested code. Follow project conventions.
 The mode change is applied when the prompt is activated and persists
 until changed again by `/mode`, another prompt directive, or a restart.
 The status bar shows `| mode:<name>` when the mode is not `standard`.
+
+## Prompt-to-model switching
+
+The `[prompt_to_model]` table maps prompt names to quick-model names. When
+you switch to a prompt (via `/prompt`, `.name`, `/review`, chain transitions,
+or `default_prompt` at startup), zerostack looks up the mapping and
+automatically switches the active model to the corresponding quick model.
+
+Values are quick-model names — the same names defined in `[quick_models]`.
+An empty string (`""`) means "no change", so the current model stays active.
+
+```toml
+[prompt_to_model]
+plan = "glm-52"
+code = "deepseek-v4-pro"
+review = "qwen37-plus"
+brainstorm = ""
+```
+
+With this config:
+- `/prompt plan` or `.plan` switches to the `glm-52` quick model.
+- `/prompt code` or `.code` switches to `deepseek-v4-pro`.
+- `/review` switches to `qwen37-plus`.
+- `/prompt brainstorm` or `.brainstorm` does **not** change the current model.
+
+When you run `/prompt default` (clearing the active prompt), the model
+reverts to the session's default model (from `model` / `provider` config
+or `--quick-model`).
+
+The model switch writes a line to chat:
+`switched to model: glm-52 (from prompt 'plan')`
 
 ## Chain-of-Prompts
 

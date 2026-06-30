@@ -41,7 +41,7 @@ use crate::ui::input::InputEditor;
 use crate::ui::permission_handler::handle_permission_request;
 use crate::ui::pickers::rewind::RewindOutcome;
 use crate::ui::renderer::{Renderer, copy_to_clipboard};
-use crate::ui::slash::{handle_compress, handle_slash};
+use crate::ui::slash::{apply_prompt_model, handle_compress, handle_slash};
 use crate::ui::terminal::TerminalGuard;
 
 use self::utils::parse_color;
@@ -1408,6 +1408,25 @@ pub async fn run_interactive(
                                                 }
                                             }
                                         }
+                                        #[cfg(feature = "mcp")]
+                                        let mcp_ref = ensure_mcp_manager(&mut mcp_manager, cfg).await;
+                                        apply_prompt_model(
+                                            next_name,
+                                            cfg,
+                                            cli,
+                                            &mut client,
+                                            session,
+                                            &mut agent,
+                                            context,
+                                            &permission,
+                                            &ask_tx,
+                                            &sandbox,
+                                            reasoning_enabled,
+                                            &mut renderer,
+                                            #[cfg(feature = "mcp")]
+                                            mcp_ref,
+                                        )
+                                        .await;
                                         let msg = phase.transition_message().to_string();
                                         for line in msg.lines() {
                                             renderer.write_line(
@@ -1530,6 +1549,25 @@ pub async fn run_interactive(
                                         }
                                     }
                                 }
+                                #[cfg(feature = "mcp")]
+                                let mcp_ref = ensure_mcp_manager(&mut mcp_manager, cfg).await;
+                                apply_prompt_model(
+                                    next_name,
+                                    cfg,
+                                    cli,
+                                    &mut client,
+                                    session,
+                                    &mut agent,
+                                    context,
+                                    &permission,
+                                    &ask_tx,
+                                    &sandbox,
+                                    reasoning_enabled,
+                                    &mut renderer,
+                                    #[cfg(feature = "mcp")]
+                                    mcp_ref,
+                                )
+                                .await;
                                 let base_msg = phase.transition_message().to_string();
                                 let msg = format!("{}\n\nAdditional instructions: {}", base_msg, trimmed);
                                 for line in msg.lines() {
@@ -1694,6 +1732,25 @@ pub async fn run_interactive(
                                                     }
                                                 }
                                         }
+                                        #[cfg(feature = "mcp")]
+                                        let mcp_ref = ensure_mcp_manager(&mut mcp_manager, cfg).await;
+                                        apply_prompt_model(
+                                            prompt_name,
+                                            cfg,
+                                            cli,
+                                            &mut client,
+                                            session,
+                                            &mut agent,
+                                            context,
+                                            &permission,
+                                            &ask_tx,
+                                            &sandbox,
+                                            reasoning_enabled,
+                                            &mut renderer,
+                                            #[cfg(feature = "mcp")]
+                                            mcp_ref,
+                                        )
+                                        .await;
                                         text = msg.to_string().into();
                                         is_dot_cmd = false;
                                         agent = None;
@@ -1722,6 +1779,25 @@ pub async fn run_interactive(
                                                     }
                                                 }
                                         }
+                                        #[cfg(feature = "mcp")]
+                                        let mcp_ref = ensure_mcp_manager(&mut mcp_manager, cfg).await;
+                                        apply_prompt_model(
+                                            prompt_name,
+                                            cfg,
+                                            cli,
+                                            &mut client,
+                                            session,
+                                            &mut agent,
+                                            context,
+                                            &permission,
+                                            &ask_tx,
+                                            &sandbox,
+                                            reasoning_enabled,
+                                            &mut renderer,
+                                            #[cfg(feature = "mcp")]
+                                            mcp_ref,
+                                        )
+                                        .await;
                                         agent = None;
                                         renderer.write_line(&format!("switched to prompt '{}'", prompt_name), C_AGENT)?;
                                         if !cli.no_session

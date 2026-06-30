@@ -120,6 +120,190 @@ impl SlashCtx<'_> {
         );
         Ok(())
     }
+
+    /// Switch to the quick-model configured in `[prompt_to_model]` for the
+    /// given prompt name. Returns `true` if a model switch occurred (and the
+    /// agent was rebuilt). When `false`, the caller should call
+    /// `rebuild_agent()` to pick up other prompt changes (mode directive, etc.).
+    pub async fn switch_to_prompt_model(&mut self, prompt_name: &str) -> bool {
+        let qm_name = match self.cfg.resolve_prompt_model(prompt_name) {
+            Some(name) => name,
+            None => return false,
+        };
+
+        let qm = crate::config::quick_models_map(self.cfg);
+        let Some(qmc) = qm.get(qm_name) else {
+            return false;
+        };
+
+        let new_model = compact_str::CompactString::from(&*qmc.model);
+        let provider_changed = qmc.provider != self.session.provider;
+
+        // Update model before rebuild so the agent is built with it.
+        self.session.model = new_model.clone();
+
+        if provider_changed {
+            match self
+                .rebuild_agent_with_client(&qmc.provider, *self.reasoning_enabled)
+                .await
+            {
+                Ok(()) => {
+                    self.session.provider = compact_str::CompactString::from(&*qmc.provider);
+                }
+                Err(e) => {
+                    let _ = self.renderer.write_line(
+                        &format!(
+                            "failed to switch provider for prompt '{}': {}",
+                            prompt_name, e
+                        ),
+                        C_ERROR,
+                    );
+                    return false;
+                }
+            }
+        } else {
+            let model = self.client.completion_model(new_model.to_string());
+            let temperature = crate::config::resolve_temperature(self.cli, self.cfg, &new_model);
+            let extra_body = crate::config::resolve_extra_body(self.cfg, &new_model);
+            #[cfg(feature = "advisor")]
+            {
+                crate::extras::advisor::update_client(self.client.clone());
+                crate::extras::advisor::set_session_messages(self.session.messages.clone());
+            }
+            *self.agent = Some(
+                crate::provider::build_agent(
+                    model,
+                    self.cli,
+                    self.cfg,
+                    self.context,
+                    self.permission.clone(),
+                    self.ask_tx.clone(),
+                    self.sandbox.clone(),
+                    *self.reasoning_enabled,
+                    temperature,
+                    extra_body,
+                    #[cfg(feature = "mcp")]
+                    self.mcp_manager,
+                )
+                .await,
+            );
+        }
+
+        self.session.input_token_cost = qmc.input_token_cost;
+        self.session.output_token_cost = qmc.output_token_cost;
+        self.session.update_context_window(
+            self.cfg
+                .resolve_context_window(&self.session.provider, &self.session.model),
+        );
+
+        let _ = self.renderer.write_line(
+            &format!(
+                "switched to model: {} (from prompt '{}')",
+                qm_name, prompt_name
+            ),
+            C_AGENT,
+        );
+        true
+    }
+}
+
+/// Free-function variant of [`SlashCtx::switch_to_prompt_model`] for call
+/// sites that don't have a `SlashCtx` (dot commands, chain transitions,
+/// startup). Returns `true` if a model switch occurred.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn apply_prompt_model(
+    prompt_name: &str,
+    cfg: &Config,
+    cli: &Cli,
+    client: &mut AnyClient,
+    session: &mut Session,
+    agent: &mut Option<AnyAgent>,
+    context: &ContextFiles,
+    permission: &Option<PermCheck>,
+    ask_tx: &Option<AskSender>,
+    sandbox: &Sandbox,
+    reasoning_enabled: bool,
+    renderer: &mut Renderer,
+    #[cfg(feature = "mcp")] mcp_manager: Option<&crate::extras::mcp::McpClientManager>,
+) -> bool {
+    let qm_name = match cfg.resolve_prompt_model(prompt_name) {
+        Some(name) => name,
+        None => return false,
+    };
+
+    let qm = crate::config::quick_models_map(cfg);
+    let Some(qmc) = qm.get(qm_name) else {
+        return false;
+    };
+
+    let new_model = compact_str::CompactString::from(&*qmc.model);
+    let provider_changed = qmc.provider != session.provider;
+
+    session.model = new_model.clone();
+
+    if provider_changed {
+        match crate::provider::create_client(
+            &qmc.provider,
+            cli.api_key.as_deref(),
+            &cfg.custom_providers_map(),
+            cfg.api_keys.as_ref(),
+        ) {
+            Ok(new_client) => {
+                *client = new_client;
+                session.provider = compact_str::CompactString::from(&*qmc.provider);
+                // Fall through to rebuild agent below
+            }
+            Err(e) => {
+                let _ = renderer.write_line(
+                    &format!(
+                        "failed to switch provider for prompt '{}': {}",
+                        prompt_name, e
+                    ),
+                    C_ERROR,
+                );
+                return false;
+            }
+        }
+    }
+
+    let model = client.completion_model(new_model.to_string());
+    let temperature = crate::config::resolve_temperature(cli, cfg, &new_model);
+    let extra_body = crate::config::resolve_extra_body(cfg, &new_model);
+    #[cfg(feature = "advisor")]
+    {
+        crate::extras::advisor::update_client(client.clone());
+        crate::extras::advisor::set_session_messages(session.messages.clone());
+    }
+    *agent = Some(
+        crate::provider::build_agent(
+            model,
+            cli,
+            cfg,
+            context,
+            permission.clone(),
+            ask_tx.clone(),
+            sandbox.clone(),
+            reasoning_enabled,
+            temperature,
+            extra_body,
+            #[cfg(feature = "mcp")]
+            mcp_manager,
+        )
+        .await,
+    );
+
+    session.input_token_cost = qmc.input_token_cost;
+    session.output_token_cost = qmc.output_token_cost;
+    session.update_context_window(cfg.resolve_context_window(&session.provider, &session.model));
+
+    let _ = renderer.write_line(
+        &format!(
+            "switched to model: {} (from prompt '{}')",
+            qm_name, prompt_name
+        ),
+        C_AGENT,
+    );
+    true
 }
 
 pub(crate) fn write_ok(renderer: &mut Renderer, msg: impl std::fmt::Display) {

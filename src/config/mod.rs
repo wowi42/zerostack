@@ -164,6 +164,11 @@ pub struct Config {
     pub api_keys: Option<HashMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quick_models: Option<HashMap<String, types::QuickModelConfig>>,
+    /// Map prompt names to quick-model names. When switching to a prompt,
+    /// zerostack looks up the quick model and switches provider+model.
+    /// Empty-string values are treated as "no change".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_to_model: Option<HashMap<String, String>>,
     #[cfg(feature = "mcp")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp_servers: Option<HashMap<String, McpServerConfig>>,
@@ -403,6 +408,19 @@ impl Config {
         self.show_cost_always.unwrap_or(false)
     }
 
+    /// Look up the quick-model name associated with a prompt in
+    /// `[prompt_to_model]`. Returns `None` when the prompt is not mapped or
+    /// the value is an empty string (which means "no change").
+    pub fn resolve_prompt_model(&self, prompt_name: &str) -> Option<&str> {
+        let map = self.prompt_to_model.as_ref()?;
+        let val = map.get(prompt_name)?;
+        if val.is_empty() {
+            None
+        } else {
+            Some(val.as_str())
+        }
+    }
+
     #[cfg(feature = "mcp")]
     pub fn resolve_enable_exa_mcp(&self) -> bool {
         self.enable_exa_mcp.unwrap_or(true)
@@ -486,5 +504,87 @@ impl ShowToolDetails {
             ShowToolDetails::Bool(true) => ResolvedShowToolDetails::Unlimited,
             ShowToolDetails::Lines(n) => ResolvedShowToolDetails::Limited(*n),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn make_config(map: HashMap<String, String>) -> Config {
+        Config {
+            prompt_to_model: Some(map),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn resolve_prompt_model_returns_value_for_known_key() {
+        let mut map = HashMap::new();
+        map.insert("plan".to_string(), "glm-52".to_string());
+        let cfg = make_config(map);
+        assert_eq!(cfg.resolve_prompt_model("plan"), Some("glm-52"));
+    }
+
+    #[test]
+    fn resolve_prompt_model_returns_none_for_unknown_key() {
+        let mut map = HashMap::new();
+        map.insert("plan".to_string(), "glm-52".to_string());
+        let cfg = make_config(map);
+        assert_eq!(cfg.resolve_prompt_model("code"), None);
+    }
+
+    #[test]
+    fn resolve_prompt_model_returns_none_for_empty_string() {
+        let mut map = HashMap::new();
+        map.insert("brainstorm".to_string(), "".to_string());
+        let cfg = make_config(map);
+        assert_eq!(cfg.resolve_prompt_model("brainstorm"), None);
+    }
+
+    #[test]
+    fn resolve_prompt_model_returns_none_when_map_is_none() {
+        let cfg = Config {
+            prompt_to_model: None,
+            ..Default::default()
+        };
+        assert_eq!(cfg.resolve_prompt_model("plan"), None);
+    }
+
+    #[test]
+    fn resolve_prompt_model_returns_none_for_empty_map() {
+        let cfg = make_config(HashMap::new());
+        assert_eq!(cfg.resolve_prompt_model("plan"), None);
+    }
+
+    #[test]
+    fn toml_deserializes_prompt_to_model() {
+        let toml_str = r#"
+prompt_to_model = { plan = "glm-52", code = "deepseek-v4-pro", empty_val = "" }
+"#;
+        let cfg: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.resolve_prompt_model("plan"), Some("glm-52"));
+        assert_eq!(cfg.resolve_prompt_model("code"), Some("deepseek-v4-pro"));
+        assert_eq!(cfg.resolve_prompt_model("empty_val"), None);
+        assert_eq!(cfg.resolve_prompt_model("unknown"), None);
+    }
+
+    #[test]
+    fn toml_prompt_to_model_with_dotted_syntax() {
+        let toml_str = r#"
+[prompt_to_model]
+plan = "glm-52"
+code = "deepseek-v4-pro"
+"#;
+        let cfg: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.resolve_prompt_model("plan"), Some("glm-52"));
+        assert_eq!(cfg.resolve_prompt_model("code"), Some("deepseek-v4-pro"));
+    }
+
+    #[test]
+    fn default_config_has_no_prompt_to_model() {
+        let cfg = Config::default();
+        assert_eq!(cfg.resolve_prompt_model("plan"), None);
     }
 }

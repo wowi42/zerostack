@@ -26,7 +26,6 @@ mod tests;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use clap::Parser;
-#[cfg(feature = "advisor")]
 use compact_str::CompactString;
 use session::MessageRole;
 #[cfg(feature = "advisor")]
@@ -90,6 +89,33 @@ fn build_permission_checker(
 
     let (ask_tx, ask_rx) = tokio::sync::mpsc::channel(64);
     (Some(perm), Some(ask_tx), Some(ask_rx))
+}
+
+/// Apply the `[prompt_to_model]` mapping at startup before the TUI is
+/// available. Updates `provider`, `model`, and `session` fields so the
+/// initial agent is built with the correct model.
+fn apply_startup_prompt_model(
+    prompt_name: &str,
+    cfg: &config::Config,
+    provider: &mut CompactString,
+    model: &mut CompactString,
+    session: &mut session::Session,
+) {
+    let qm_name = match cfg.resolve_prompt_model(prompt_name) {
+        Some(name) => name,
+        None => return,
+    };
+    let qm = config::quick_models_map(cfg);
+    let Some(qmc) = qm.get(qm_name) else {
+        return;
+    };
+    *provider = qmc.provider.clone();
+    *model = qmc.model.clone();
+    session.model = qmc.model.clone();
+    session.provider = qmc.provider.clone();
+    session.input_token_cost = qmc.input_token_cost;
+    session.output_token_cost = qmc.output_token_cost;
+    session.update_context_window(cfg.resolve_context_window(&session.provider, &session.model));
 }
 
 #[cfg_attr(
@@ -205,7 +231,7 @@ async fn main() -> anyhow::Result<()> {
         session.update_context_window(cw);
     }
 
-    let client = provider::create_client(
+    let mut client = provider::create_client(
         &provider,
         cli.api_key.as_deref(),
         &cfg.custom_providers_map(),
@@ -504,6 +530,15 @@ async fn main() -> anyhow::Result<()> {
 
             context.current_prompt = Some(prompt_text);
             context.current_prompt_name = Some(default_prompt.to_string());
+
+            // Apply prompt-to-model mapping
+            apply_startup_prompt_model(
+                default_prompt,
+                &cfg,
+                &mut provider,
+                &mut model,
+                &mut session,
+            );
         }
     }
 
@@ -532,6 +567,9 @@ async fn main() -> anyhow::Result<()> {
 
             context.current_prompt = Some(prompt_text);
             context.current_prompt_name = Some(name.clone());
+
+            // Apply prompt-to-model mapping
+            apply_startup_prompt_model(name, &cfg, &mut provider, &mut model, &mut session);
         } else {
             let mut sorted: Vec<&String> = context.prompts.keys().collect();
             sorted.sort();
@@ -541,6 +579,27 @@ async fn main() -> anyhow::Result<()> {
                 eprintln!("  {}", p);
             }
             anyhow::bail!("unknown prompt '{}'", name);
+        }
+    }
+
+    // Rebuild client if the provider changed due to prompt-to-model mapping
+    if client.provider_name() != provider.as_str() {
+        match provider::create_client(
+            &provider,
+            cli.api_key.as_deref(),
+            &cfg.custom_providers_map(),
+            cfg.api_keys.as_ref(),
+        ) {
+            Ok(new_client) => {
+                client = new_client;
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to rebuild client for prompt-mapped provider '{}': {}",
+                    provider,
+                    e
+                );
+            }
         }
     }
 

@@ -40,7 +40,23 @@ async fn handle_prompt(parts: &[&str], ctx: &mut SlashCtx<'_>) -> anyhow::Result
         } else {
             ctx.context.current_prompt = None;
             ctx.context.current_prompt_name = None;
-            ctx.rebuild_agent().await;
+            // Revert to the config default model
+            let default_model = ctx.cli.resolve_model(ctx.cfg);
+            let default_provider = ctx.cli.resolve_provider(ctx.cfg);
+            let provider_changed = default_provider != ctx.session.provider;
+            ctx.session.model = default_model;
+            if provider_changed {
+                if let Err(e) = ctx
+                    .rebuild_agent_with_client(&default_provider, *ctx.reasoning_enabled)
+                    .await
+                {
+                    write_error(ctx.renderer, format!("failed to revert provider: {}", e));
+                } else {
+                    ctx.session.provider = default_provider;
+                }
+            } else {
+                ctx.rebuild_agent().await;
+            }
             write_ok(ctx.renderer, "prompt cleared (back to default)");
         }
     } else {
@@ -78,7 +94,10 @@ async fn handle_prompt(parts: &[&str], ctx: &mut SlashCtx<'_>) -> anyhow::Result
                     );
                 }
             }
-            ctx.rebuild_agent().await;
+            let model_switched = ctx.switch_to_prompt_model(name).await;
+            if !model_switched {
+                ctx.rebuild_agent().await;
+            }
             write_ok(ctx.renderer, format!("active prompt: {}", name));
         } else {
             write_error(ctx.renderer, format!("unknown prompt: '{}'", name));
