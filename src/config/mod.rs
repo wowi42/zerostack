@@ -239,9 +239,21 @@ impl Config {
         )
     }
 
-    pub fn resolve_context_window(&self, provider: &str, model_id: &str) -> u64 {
+    pub fn resolve_context_window(
+        &self,
+        provider: &str,
+        model_id: &str,
+        qm: &HashMap<String, types::QuickModelConfig>,
+    ) -> u64 {
         if let Some(cw) = self.context_window {
             return cw;
+        }
+        for qmc in qm.values() {
+            if qmc.model.as_str() == model_id
+                && let Some(cw) = qmc.context_window
+            {
+                return cw;
+            }
         }
         Self::catalog_context_window(provider, model_id).unwrap_or(128_000)
     }

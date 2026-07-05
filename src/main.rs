@@ -115,7 +115,11 @@ fn apply_startup_prompt_model(
     session.provider = qmc.provider.clone();
     session.input_token_cost = qmc.input_token_cost;
     session.output_token_cost = qmc.output_token_cost;
-    session.update_context_window(cfg.resolve_context_window(&session.provider, &session.model));
+    session.update_context_window(cfg.resolve_context_window(
+        &session.provider,
+        &session.model,
+        &qm,
+    ));
 }
 
 #[cfg_attr(
@@ -159,14 +163,14 @@ async fn main() -> anyhow::Result<()> {
         model = qm.model.clone();
     }
 
+    let qm_map = config::quick_models_map(&cfg);
     let mut session = session::Session::new(
         &provider,
         &model,
-        cfg.resolve_context_window(&provider, &model),
+        cfg.resolve_context_window(&provider, &model, &qm_map),
     );
 
     // Resolve input/output token costs from quick models or defaults
-    let qm_map = config::quick_models_map(&cfg);
     if let Some(qm) = cli.resolve_quick_model(&cfg) {
         session.input_token_cost = qm.input_token_cost;
         session.output_token_cost = qm.output_token_cost;
@@ -869,7 +873,7 @@ fn print_config(cli: &cli::Cli, cfg: &config::Config) {
     let qm_map = config::quick_models_map(cfg);
     let max_tokens = cli.resolve_max_tokens(cfg);
     let max_agent_turns = cli.resolve_max_agent_turns(cfg);
-    let context_window = cfg.resolve_context_window(&provider, &model);
+    let context_window = cfg.resolve_context_window(&provider, &model, &qm_map);
     let temperature = config::resolve_temperature(cli, cfg, &model);
     let no_tools = cli.resolve_no_tools(cfg);
     let no_context_files = cli.resolve_no_context_files(cfg);

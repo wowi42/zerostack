@@ -65,6 +65,7 @@ fn default_quick_models() -> HashMap<String, QuickModelConfig> {
             reserve_tokens: None,
             temperature: None,
             extra_body: None,
+            context_window: None,
         },
     );
     map.insert(
@@ -77,6 +78,7 @@ fn default_quick_models() -> HashMap<String, QuickModelConfig> {
             reserve_tokens: None,
             temperature: None,
             extra_body: None,
+            context_window: None,
         },
     );
     map
@@ -117,6 +119,7 @@ pub fn save_quick_model(
             reserve_tokens: None,
             temperature: None,
             extra_body: None,
+            context_window: None,
         },
     );
 

@@ -22,6 +22,10 @@ pub struct QuickModelConfig {
     /// `extra_body` for this model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extra_body: Option<serde_json::Value>,
+    /// Per-model context window override. Takes precedence over the static
+    /// model catalog but is overridden by the global `context_window` setting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u64>,
 }
 
 /// Status-bar statusline layout. Up to 3 lines, each an ordered list of segments.
