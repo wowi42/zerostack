@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use agent_client_protocol::on_receive_request;
-use agent_client_protocol::schema::*;
+use agent_client_protocol::schema::v1::*;
 use agent_client_protocol::{
     Agent, ByteStreams, Client, ConnectTo, ConnectionTo, Dispatch, Responder, Role, Stdio,
 };
