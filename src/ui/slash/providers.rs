@@ -78,9 +78,12 @@ pub(crate) async fn fetch_models_cached(
         {
             Ok(prices) => {
                 for m in &mut models {
-                    if let Some((input, output)) = prices.get(&m.id) {
+                    if let Some((input, output, ctx_len)) = prices.get(&m.id) {
                         m.input_price = Some(*input);
                         m.output_price = Some(*output);
+                        if m.context_length.is_none() {
+                            m.context_length = *ctx_len;
+                        }
                     }
                 }
             }
@@ -146,6 +149,14 @@ fn lookup_pricing_from_cache(provider: &str, model_id: &str) -> Option<(f64, f64
         })
 }
 
+fn lookup_context_from_cache(provider: &str, model_id: &str) -> Option<u32> {
+    MODEL_CACHE
+        .lock()
+        .unwrap()
+        .get(provider)
+        .and_then(|models| models.iter().find(|m| m.id == model_id)?.context_length)
+}
+
 async fn apply_model(ctx: &mut SlashCtx<'_>, model_id: &str) {
     let new_model = compact_str::CompactString::new(model_id);
     let model = ctx.client.completion_model(new_model.to_string());
@@ -186,10 +197,22 @@ async fn apply_model(ctx: &mut SlashCtx<'_>, model_id: &str) {
         )
         .await
         {
-            if let Some((input, output)) = prices.get(model_id) {
+            if let Some((input, output, ctx_len)) = prices.get(model_id) {
                 ctx.session.input_token_cost = *input;
                 ctx.session.output_token_cost = *output;
+                if ctx.cfg.context_window.is_none()
+                    && let Some(cl) = ctx_len
+                {
+                    ctx.session.update_context_window(*cl as u64);
+                }
             }
+        }
+    }
+    if ctx.cfg.context_window.is_none()
+        && config::Config::catalog_context_window(&ctx.session.provider, &new_model).is_none()
+    {
+        if let Some(cl) = lookup_context_from_cache(&ctx.session.provider, model_id) {
+            ctx.session.update_context_window(cl as u64);
         }
     }
     write_ok(ctx.renderer, format!("switched to model: {}", new_model));
@@ -291,10 +314,22 @@ async fn handle_model(parts: &[&str], ctx: &mut SlashCtx<'_>) -> anyhow::Result<
         )
         .await
         {
-            if let Some((input, output)) = prices.get(&*new_model) {
+            if let Some((input, output, ctx_len)) = prices.get(&*new_model) {
                 ctx.session.input_token_cost = *input;
                 ctx.session.output_token_cost = *output;
+                if ctx.cfg.context_window.is_none()
+                    && let Some(cl) = ctx_len
+                {
+                    ctx.session.update_context_window(*cl as u64);
+                }
             }
+        }
+    }
+    if ctx.cfg.context_window.is_none()
+        && config::Config::catalog_context_window(&ctx.session.provider, &new_model).is_none()
+    {
+        if let Some(cl) = lookup_context_from_cache(&ctx.session.provider, &new_model) {
+            ctx.session.update_context_window(cl as u64);
         }
     }
     write_ok(ctx.renderer, format!("switched to model: {}", new_model));

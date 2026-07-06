@@ -226,13 +226,27 @@ async fn main() -> anyhow::Result<()> {
     // be stale if the model's catalog entry has changed since (e.g. a model that
     // grew from 128k to 1M). Re-derive it from the catalog for the session's own
     // model, unless the user pinned `context_window` in config (then that wins).
-    if cfg.context_window.is_none()
-        && let Some(cw) = config::Config::catalog_context_window(
+    // If the catalog doesn't list the model (e.g. a new OpenRouter model), fall
+    // back to the live OpenRouter API's context_length.
+    if cfg.context_window.is_none() {
+        if let Some(cw) = config::Config::catalog_context_window(
             session.provider.as_str(),
             session.model.as_str(),
-        )
-    {
-        session.update_context_window(cw);
+        ) {
+            session.update_context_window(cw);
+        } else if session.provider == "openrouter" {
+            if let Ok(prices) = provider::fetch_openrouter_pricing(
+                cli.api_key.as_deref(),
+                &cfg.custom_providers_map(),
+                cfg.api_keys.as_ref(),
+            )
+            .await
+            {
+                if let Some((_, _, Some(cl))) = prices.get(session.model.as_str()) {
+                    session.update_context_window(*cl as u64);
+                }
+            }
+        }
     }
 
     let mut client = provider::create_client(
@@ -307,8 +321,9 @@ async fn main() -> anyhow::Result<()> {
 
     // Fetch OpenRouter pricing at startup so cost tracking works from the first turn
     if provider == "openrouter"
-        && session.input_token_cost == 0.0
-        && session.output_token_cost == 0.0
+        && (session.input_token_cost == 0.0 && session.output_token_cost == 0.0
+            || cfg.context_window.is_none()
+                && config::Config::catalog_context_window(&provider, &model).is_none())
     {
         if let Ok(prices) = provider::fetch_openrouter_pricing(
             cli.api_key.as_deref(),
@@ -317,9 +332,18 @@ async fn main() -> anyhow::Result<()> {
         )
         .await
         {
-            if let Some((input, output)) = prices.get(model.as_str()) {
-                session.input_token_cost = *input;
-                session.output_token_cost = *output;
+            if let Some((input, output, ctx_len)) = prices.get(model.as_str()) {
+                if session.input_token_cost == 0.0 {
+                    session.input_token_cost = *input;
+                }
+                if session.output_token_cost == 0.0 {
+                    session.output_token_cost = *output;
+                }
+                if cfg.context_window.is_none()
+                    && let Some(cl) = ctx_len
+                {
+                    session.update_context_window(*cl as u64);
+                }
             }
         }
     }

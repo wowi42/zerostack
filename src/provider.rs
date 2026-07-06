@@ -388,7 +388,7 @@ pub async fn fetch_openrouter_pricing(
     api_key: Option<&str>,
     custom_providers: &HashMap<String, CustomProviderConfig>,
     config_api_keys: Option<&HashMap<String, String>>,
-) -> anyhow::Result<HashMap<String, (f64, f64)>> {
+) -> anyhow::Result<HashMap<String, (f64, f64, Option<u32>)>> {
     let config = resolve_provider_config("openrouter", custom_providers)?;
     let key = AuthResolver::new(config.kind)
         .with_cli_key(api_key)
@@ -413,6 +413,7 @@ pub async fn fetch_openrouter_pricing(
     struct PricingEntry {
         id: String,
         pricing: Option<PricingResp>,
+        context_length: Option<u32>,
     }
     #[derive(serde::Deserialize)]
     struct PricingList {
@@ -421,13 +422,24 @@ pub async fn fetch_openrouter_pricing(
     let resp: PricingList = req.send().await?.error_for_status()?.json().await?;
     let mut map = HashMap::new();
     for entry in resp.data {
-        if let Some(p) = entry.pricing {
-            let input: f64 = p.prompt.parse().unwrap_or(0.0);
-            let output: f64 = p.completion.parse().unwrap_or(0.0);
-            if input > 0.0 || output > 0.0 {
-                map.insert(entry.id, (input * 1_000_000.0, output * 1_000_000.0));
-            }
-        }
+        let input = entry
+            .pricing
+            .as_ref()
+            .map(|p| p.prompt.parse::<f64>().unwrap_or(0.0))
+            .unwrap_or(0.0);
+        let output = entry
+            .pricing
+            .as_ref()
+            .map(|p| p.completion.parse::<f64>().unwrap_or(0.0))
+            .unwrap_or(0.0);
+        map.insert(
+            entry.id,
+            (
+                input * 1_000_000.0,
+                output * 1_000_000.0,
+                entry.context_length,
+            ),
+        );
     }
     Ok(map)
 }
