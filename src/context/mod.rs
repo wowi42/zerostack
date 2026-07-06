@@ -135,7 +135,7 @@ fn load_file(path: &PathBuf) -> Option<String> {
 /// Maximum total bytes of ancestor context files (AGENTS.md, CLAUDE.md,
 /// ARCHITECTURE.md) to load into the system prompt. Prevents a planted or
 /// oversized file from blowing up the context window.
-const MAX_ANCESTOR_CONTEXT_BYTES: usize = 64_000;
+const MAX_ANCESTOR_CONTEXT_BYTES: usize = 524_288;
 
 /// Walks from CWD up to root once, collecting AGENTS.md, CLAUDE.md, and
 /// ARCHITECTURE.md files. This avoids the duplicate traversal that the

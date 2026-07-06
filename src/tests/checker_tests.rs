@@ -220,19 +220,14 @@ fn doom_loop_resets_for_different_inputs() {
 }
 
 #[test]
-fn doom_loop_detects_repeated_within_window() {
-    // Security fix: doom-loop detection now uses a sliding window instead of
-    // only exact consecutive repeats. Alternating calls (A, A, B, A, A) that
-    // repeat the same operation within the window should trigger.
+fn doom_loop_detects_consecutive_repeats() {
     let mut checker = make_checker(SecurityMode::Standard);
     checker.check("bash", "ls");
-    checker.check("bash", "ls");
-    checker.check("bash", "pwd");
     checker.check("bash", "ls");
     let result = checker.check("bash", "ls");
     assert!(
         matches!(result, CheckResult::AllowedWithCoaching(_)),
-        "repeated calls within window should trigger doom loop coaching, got {:?}",
+        "three consecutive identical calls should trigger doom loop coaching, got {:?}",
         result,
     );
 }

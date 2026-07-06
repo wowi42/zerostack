@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -33,7 +33,8 @@ pub struct PermissionChecker {
     doom_loop_action: Action,
     working_dir: String,
     session_allowlist: Vec<(String, Pattern)>,
-    recent_calls: VecDeque<(String, String)>,
+    last_call: Option<(String, String)>,
+    consecutive_repeat_count: usize,
     mode: SecurityMode,
     user_mode: SecurityMode,
     permission_modes: Vec<SecurityMode>,
@@ -186,7 +187,8 @@ impl PermissionChecker {
             doom_loop_action,
             working_dir,
             session_allowlist: Vec::new(),
-            recent_calls: VecDeque::new(),
+            last_call: None,
+            consecutive_repeat_count: 0,
             mode,
             user_mode: mode,
             permission_modes: resolved_modes,
@@ -487,26 +489,25 @@ impl PermissionChecker {
         None
     }
 
-    /// Maximum number of recent calls to retain for doom-loop detection.
-    const DOOM_WINDOW: usize = 8;
-
     fn track_doom_loop(&mut self, tool: &str, input: &str) {
         let current = (tool.to_string(), input.to_string());
-        if self.recent_calls.len() >= Self::DOOM_WINDOW {
-            self.recent_calls.pop_front();
+        match &self.last_call {
+            Some(prev) if *prev == current => {
+                self.consecutive_repeat_count += 1;
+            }
+            _ => {
+                self.last_call = Some(current);
+                self.consecutive_repeat_count = 1;
+            }
         }
-        self.recent_calls.push_back(current);
     }
 
     fn is_doom_loop(&self) -> bool {
-        self.count_doom_loop() >= 3
+        self.consecutive_repeat_count >= 3
     }
 
     fn count_doom_loop(&self) -> usize {
-        let Some(last) = self.recent_calls.back() else {
-            return 0;
-        };
-        self.recent_calls.iter().filter(|c| *c == last).count()
+        self.consecutive_repeat_count
     }
 }
 

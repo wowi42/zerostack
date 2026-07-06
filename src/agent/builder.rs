@@ -67,7 +67,7 @@ pub fn build_preamble(context: &ContextFiles, reasoning_enabled: bool) -> String
 
     // Add extra files content to preamble budget. Cap each file to prevent a
     // huge file from blowing up the system prompt past the context window.
-    const MAX_EXTRA_FILE_BYTES: usize = 256_000;
+    const MAX_EXTRA_FILE_BYTES: usize = 524_288;
     let extra_files_content: Vec<String> = context
         .extra_files
         .iter()
