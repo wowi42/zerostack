@@ -165,7 +165,7 @@ async fn main() -> anyhow::Result<()> {
 
     let name = cli.name.as_deref().unwrap_or("");
     let qm_map = config::quick_models_map(&cfg);
-    let mut session = session::Session::with_name(
+    let mut session = session::Session::new(
         &provider,
         &model,
         cfg.resolve_context_window(&provider, &model, &qm_map),
