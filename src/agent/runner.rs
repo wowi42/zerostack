@@ -532,7 +532,7 @@ pub async fn run_print<M, P>(
     max_turns: usize,
     pure_stdout: bool,
     retry_config: &RetryConfig,
-) -> anyhow::Result<String>
+) -> anyhow::Result<(String, rig::completion::Usage)>
 where
     M: CompletionModel + 'static,
     M::StreamingResponse: Send + Sync + Unpin + Clone + 'static,
@@ -552,6 +552,7 @@ where
 
     let mut full_response = String::new();
     let mut last_tool_name: Option<String> = None;
+    let mut usage = rig::completion::Usage::new();
 
     while let Some(item) = stream.next().await {
         match item {
@@ -603,7 +604,10 @@ where
                     let _ = std::io::Write::flush(&mut std::io::stdout());
                 }
             }
-            Ok(MultiTurnStreamItem::FinalResponse(_)) => break,
+            Ok(MultiTurnStreamItem::FinalResponse(res)) => {
+                usage = res.usage();
+                break;
+            }
             Ok(_) => {}
             Err(e) => {
                 eprintln!("Error: {}", e);
@@ -613,7 +617,7 @@ where
     }
 
     println!();
-    Ok(full_response)
+    Ok((full_response, usage))
 }
 
 fn format_tool_args_summary(args_json: &serde_json::Value) -> String {

@@ -572,7 +572,7 @@ impl AnyAgent {
         max_turns: usize,
         pure_stdout: bool,
         retry_config: &RetryConfig,
-    ) -> anyhow::Result<String> {
+    ) -> anyhow::Result<(String, rig::completion::Usage)> {
         match self {
             AnyAgent::OpenRouter(a) => {
                 runner::run_print(a, prompt, max_turns, pure_stdout, retry_config).await

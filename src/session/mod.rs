@@ -69,6 +69,10 @@ pub struct Session {
     pub total_input_tokens: u64,
     #[serde(default)]
     pub total_output_tokens: u64,
+    #[serde(default)]
+    pub total_cached_input_tokens: u64,
+    #[serde(default)]
+    pub total_cache_creation_input_tokens: u64,
     pub total_cost: f64,
     pub total_estimated_tokens: u64,
     #[serde(default)]
@@ -174,6 +178,8 @@ impl Session {
             updated_at: now,
             total_input_tokens: 0,
             total_output_tokens: 0,
+            total_cached_input_tokens: 0,
+            total_cache_creation_input_tokens: 0,
             total_cost: 0.0,
             total_estimated_tokens: 0,
             calibrated_tokens: 0,

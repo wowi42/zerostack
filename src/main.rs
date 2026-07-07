@@ -762,10 +762,28 @@ async fn main() -> anyhow::Result<()> {
             if let Some(ss) = status_signals.as_ref() {
                 ss.send_stop();
             }
-            let response = response_result?;
+            let (response, usage) = response_result?;
             if !cli.no_session {
                 session.add_message(MessageRole::User, &msg);
                 session.add_message(MessageRole::Assistant, &response);
+                session.total_input_tokens = session
+                    .total_input_tokens
+                    .saturating_add(usage.input_tokens);
+                session.total_output_tokens = session
+                    .total_output_tokens
+                    .saturating_add(usage.output_tokens);
+                session.total_cached_input_tokens = session
+                    .total_cached_input_tokens
+                    .saturating_add(usage.cached_input_tokens);
+                session.total_cache_creation_input_tokens = session
+                    .total_cache_creation_input_tokens
+                    .saturating_add(usage.cache_creation_input_tokens);
+                session.total_cost += crate::pricing::estimate_cost(
+                    usage.input_tokens,
+                    usage.output_tokens,
+                    session.input_token_cost,
+                    session.output_token_cost,
+                );
                 session::storage::save_session(&session)?;
                 let _ =
                     session::chat_history::append_entry(&session::chat_history::ChatHistoryEntry {
@@ -1095,7 +1113,7 @@ async fn run_headless_loop(
             )
             .await
         {
-            Ok(r) => {
+            Ok((r, _usage)) => {
                 if let Some(ss) = status_signals.as_ref() {
                     ss.send_stop();
                 }
