@@ -181,6 +181,11 @@ async fn main() -> anyhow::Result<()> {
     {
         session.input_token_cost = qm.input_token_cost;
         session.output_token_cost = qm.output_token_cost;
+    } else if let Some((input_cost, output_cost)) =
+        config::Config::catalog_input_output_cost(&provider, &model)
+    {
+        session.input_token_cost = input_cost;
+        session.output_token_cost = output_cost;
     }
 
     if cli.continue_session

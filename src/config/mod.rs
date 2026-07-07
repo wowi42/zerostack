@@ -272,6 +272,18 @@ impl Config {
             .map(|cl| cl as u64)
     }
 
+    /// The model's input/output cost (USD per million tokens) straight from
+    /// the static catalog, or `None` when the provider/model isn't listed or
+    /// carries no baked-in pricing (e.g. OpenRouter, which prices live via
+    /// `fetch_openrouter_pricing` instead).
+    pub fn catalog_input_output_cost(provider: &str, model_id: &str) -> Option<(f64, f64)> {
+        let entries = crate::models_catalog::catalog_entries(provider)?;
+        entries
+            .iter()
+            .find(|e| e.id == model_id)
+            .and_then(|e| e.input_price.zip(e.output_price))
+    }
+
     pub fn resolve_reserve_tokens(
         &self,
         model_id: &str,
