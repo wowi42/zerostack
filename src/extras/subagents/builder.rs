@@ -48,6 +48,9 @@ fn build_explore_agent_inner<M: CompletionModel + 'static>(
         Box::new(crate::extras::memory::MemorySearch::new(None, None)),
     ];
 
+    #[cfg(feature = "hooks")]
+    let tools = crate::extras::hooks::wrap_from_global(tools, None);
+
     let mut builder = AgentBuilder::new(model)
         .preamble(&preamble)
         .default_max_turns(max_turns)

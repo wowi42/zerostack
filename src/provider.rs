@@ -565,34 +565,109 @@ pub enum AnyAgent {
     Ollama(Agent<ollama::CompletionModel>),
 }
 
+/// Synthesizes an `AgentRunner` for a prompt blocked by a `UserPromptSubmit`
+/// hook: no model call happens, the block feedback surfaces through the same
+/// `AgentEvent::Error` path a real run-time error would use.
+#[cfg(feature = "hooks")]
+fn spawn_blocked_runner(feedback: String) -> AgentRunner {
+    let (event_tx, event_rx) = mpsc::channel::<AgentEvent>(1);
+    let join = tokio::spawn(async move {
+        let _ = event_tx
+            .send(AgentEvent::Error(CompactString::from(feedback)))
+            .await;
+    });
+    AgentRunner {
+        event_rx,
+        abort_handle: join.abort_handle(),
+    }
+}
+
 impl AnyAgent {
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_print(
         &self,
         prompt: &str,
         max_turns: usize,
         pure_stdout: bool,
         retry_config: &RetryConfig,
+        // `--loop` iteration/active state; see `runner::run_print`. `None`
+        // for plain `-p` one-shot runs.
+        #[cfg(feature = "hooks")] loop_info: Option<(u32, bool)>,
     ) -> anyhow::Result<(String, rig::completion::Usage)> {
         match self {
             AnyAgent::OpenRouter(a) => {
-                runner::run_print(a, prompt, max_turns, pure_stdout, retry_config).await
+                runner::run_print(
+                    a,
+                    prompt,
+                    max_turns,
+                    pure_stdout,
+                    retry_config,
+                    #[cfg(feature = "hooks")]
+                    loop_info,
+                )
+                .await
             }
             AnyAgent::OpenAI(a) => match a {
                 OpenAiAgent::Responses(a) => {
-                    runner::run_print(a, prompt, max_turns, pure_stdout, retry_config).await
+                    runner::run_print(
+                        a,
+                        prompt,
+                        max_turns,
+                        pure_stdout,
+                        retry_config,
+                        #[cfg(feature = "hooks")]
+                        loop_info,
+                    )
+                    .await
                 }
                 OpenAiAgent::Completions(a) => {
-                    runner::run_print(a, prompt, max_turns, pure_stdout, retry_config).await
+                    runner::run_print(
+                        a,
+                        prompt,
+                        max_turns,
+                        pure_stdout,
+                        retry_config,
+                        #[cfg(feature = "hooks")]
+                        loop_info,
+                    )
+                    .await
                 }
             },
             AnyAgent::Anthropic(a) => {
-                runner::run_print(a, prompt, max_turns, pure_stdout, retry_config).await
+                runner::run_print(
+                    a,
+                    prompt,
+                    max_turns,
+                    pure_stdout,
+                    retry_config,
+                    #[cfg(feature = "hooks")]
+                    loop_info,
+                )
+                .await
             }
             AnyAgent::Gemini(a) => {
-                runner::run_print(a, prompt, max_turns, pure_stdout, retry_config).await
+                runner::run_print(
+                    a,
+                    prompt,
+                    max_turns,
+                    pure_stdout,
+                    retry_config,
+                    #[cfg(feature = "hooks")]
+                    loop_info,
+                )
+                .await
             }
             AnyAgent::Ollama(a) => {
-                runner::run_print(a, prompt, max_turns, pure_stdout, retry_config).await
+                runner::run_print(
+                    a,
+                    prompt,
+                    max_turns,
+                    pure_stdout,
+                    retry_config,
+                    #[cfg(feature = "hooks")]
+                    loop_info,
+                )
+                .await
             }
         }
     }
@@ -629,23 +704,73 @@ impl AnyAgent {
         }
     }
 
-    pub fn spawn_runner(
+    pub async fn spawn_runner(
         self,
         prompt: String,
         history: Vec<Message>,
         retry_config: RetryConfig,
+        // `--loop` iteration/active state; see `runner::spawn_agent`. `None`
+        // outside loop mode.
+        #[cfg(feature = "hooks")] loop_info: Option<(u32, bool)>,
     ) -> AgentRunner {
+        #[cfg(feature = "hooks")]
+        let prompt = match crate::extras::hooks::dispatch_user_prompt_submit(prompt).await {
+            crate::extras::hooks::PromptGate::Blocked(feedback) => {
+                return spawn_blocked_runner(feedback);
+            }
+            crate::extras::hooks::PromptGate::Proceed(prompt) => prompt,
+        };
         match self {
-            AnyAgent::OpenRouter(a) => runner::spawn_agent(a, prompt, history, retry_config),
+            AnyAgent::OpenRouter(a) => runner::spawn_agent(
+                a,
+                prompt,
+                history,
+                retry_config,
+                #[cfg(feature = "hooks")]
+                loop_info,
+            ),
             AnyAgent::OpenAI(a) => match a {
-                OpenAiAgent::Responses(a) => runner::spawn_agent(a, prompt, history, retry_config),
-                OpenAiAgent::Completions(a) => {
-                    runner::spawn_agent(a, prompt, history, retry_config)
-                }
+                OpenAiAgent::Responses(a) => runner::spawn_agent(
+                    a,
+                    prompt,
+                    history,
+                    retry_config,
+                    #[cfg(feature = "hooks")]
+                    loop_info,
+                ),
+                OpenAiAgent::Completions(a) => runner::spawn_agent(
+                    a,
+                    prompt,
+                    history,
+                    retry_config,
+                    #[cfg(feature = "hooks")]
+                    loop_info,
+                ),
             },
-            AnyAgent::Anthropic(a) => runner::spawn_agent(a, prompt, history, retry_config),
-            AnyAgent::Gemini(a) => runner::spawn_agent(a, prompt, history, retry_config),
-            AnyAgent::Ollama(a) => runner::spawn_agent(a, prompt, history, retry_config),
+            AnyAgent::Anthropic(a) => runner::spawn_agent(
+                a,
+                prompt,
+                history,
+                retry_config,
+                #[cfg(feature = "hooks")]
+                loop_info,
+            ),
+            AnyAgent::Gemini(a) => runner::spawn_agent(
+                a,
+                prompt,
+                history,
+                retry_config,
+                #[cfg(feature = "hooks")]
+                loop_info,
+            ),
+            AnyAgent::Ollama(a) => runner::spawn_agent(
+                a,
+                prompt,
+                history,
+                retry_config,
+                #[cfg(feature = "hooks")]
+                loop_info,
+            ),
         }
     }
 

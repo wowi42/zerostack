@@ -168,6 +168,31 @@ async fn main() -> anyhow::Result<()> {
     #[cfg(not(feature = "acp"))]
     let is_interactive = !cli.print && !cli.loop_mode;
 
+    // ── Hooks: load settings.json config, apply trust, install dispatcher ──
+    // Done this early (before provider/API-key resolution) so `--hooks-test`
+    // is a pure config/dispatch dry run that needs no API key and makes no
+    // model call.
+    #[cfg(feature = "hooks")]
+    {
+        crate::extras::hooks::init_dispatcher(crate::extras::hooks::trust::load_dispatcher(
+            cli.no_hooks,
+            !is_interactive,
+        ));
+
+        if let Some(tool_name) = &cli.hooks_test {
+            let tool_input: serde_json::Value = cli
+                .hooks_test_input
+                .as_deref()
+                .map(|s| serde_json::from_str(s).unwrap_or(serde_json::Value::Null))
+                .unwrap_or_else(|| serde_json::json!({}));
+            println!(
+                "{}",
+                crate::extras::hooks::hooks_test_dry_run(tool_name, tool_input).await
+            );
+            return Ok(());
+        }
+    }
+
     // Load context first so prompts/themes are available early.
     // (Version-change / ARCHITECTURE.md prompts are deferred to right before
     // the TUI to avoid blocking startup on stdin.)
@@ -209,12 +234,19 @@ async fn main() -> anyhow::Result<()> {
         session.output_token_cost = output_cost;
     }
 
+    #[cfg(feature = "hooks")]
+    let mut session_resumed = false;
+
     if cli.continue_session
         && cli.session.is_none()
         && let Ok(sessions) = session::storage::find_recent_sessions(1)
         && let Some(s) = sessions.into_iter().next()
     {
         session = s;
+        #[cfg(feature = "hooks")]
+        {
+            session_resumed = true;
+        }
     }
 
     if let Some(session_id) = &cli.session {
@@ -223,11 +255,19 @@ async fn main() -> anyhow::Result<()> {
             // try exact name match as fallback
             if let Some(s) = session::storage::find_session_by_name(session_id)? {
                 session = s;
+                #[cfg(feature = "hooks")]
+                {
+                    session_resumed = true;
+                }
             } else {
                 anyhow::bail!("no session matching '{}'", session_id);
             }
         } else if sessions.len() == 1 {
             session = sessions.into_iter().next().unwrap();
+            #[cfg(feature = "hooks")]
+            {
+                session_resumed = true;
+            }
         } else {
             eprintln!("multiple sessions match '{}':", session_id);
             for s in &sessions {
@@ -558,6 +598,14 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
+    // `SessionStart` fires here (dispatcher already installed above, before
+    // provider/API-key resolution) once `session_resumed` is known.
+    #[cfg(feature = "hooks")]
+    {
+        let source = if session_resumed { "resume" } else { "startup" };
+        crate::extras::hooks::dispatch_session_start(source).await;
+    }
+
     // ARCHITECTURE.md prompt: defer to here so all heavy setup completes first.
     #[cfg(feature = "archmd")]
     let arch_created = if !cli.resolve_no_context_files(&cfg) {
@@ -796,6 +844,8 @@ async fn main() -> anyhow::Result<()> {
                     cli.resolve_max_agent_turns(&cfg),
                     cli.pure_stdout,
                     &cfg.retry,
+                    #[cfg(feature = "hooks")]
+                    None,
                 )
                 .await;
             if let Some(ss) = status_signals.as_ref() {
@@ -854,7 +904,10 @@ async fn main() -> anyhow::Result<()> {
                 mcp_manager.as_ref(),
             )
             .await;
-            return run_headless_loop(agent, &cli, &cfg, &context, status_signals).await;
+            let result = run_headless_loop(agent, &cli, &cfg, &context, status_signals).await;
+            #[cfg(feature = "hooks")]
+            crate::extras::hooks::dispatch_session_end("exit").await;
+            return result;
         }
 
         if !cli.resolve_no_tools(&cfg)
@@ -888,6 +941,9 @@ async fn main() -> anyhow::Result<()> {
         )
         .await?;
     }
+
+    #[cfg(feature = "hooks")]
+    crate::extras::hooks::dispatch_session_end("exit").await;
 
     Ok(())
 }
@@ -1157,6 +1213,8 @@ async fn run_headless_loop(
                 cli.resolve_max_agent_turns(cfg),
                 cli.pure_stdout,
                 &cfg.retry,
+                #[cfg(feature = "hooks")]
+                Some((state.iteration, state.active)),
             )
             .await
         {
