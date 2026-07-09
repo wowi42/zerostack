@@ -30,6 +30,7 @@ multithread = ["tokio/rt-multi-thread"]
 multimodal = ["rig/image"]               
 pdf = ["multimodal", "rig/pdf"]   
 advisor = []
+hooks = []
 
 [dependencies]
 rig = { version = "0.39", features = ["rmcp"] }
