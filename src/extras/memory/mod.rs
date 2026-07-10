@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{Duration, Local};
+use chrono::Local;
 use regex::RegexBuilder;
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
@@ -96,7 +96,6 @@ pub struct Mem {
     /// projects don't pollute each other. MEMORY.md stays global (shared).
     pub project: String,
     pub today: String,
-    pub yesterday: String,
 }
 
 impl Mem {
@@ -112,15 +111,11 @@ impl Mem {
             .map(|p| project_slug(&p))
             .unwrap_or_else(|_| "default".to_string());
         let today = Local::now().format("%Y-%m-%d").to_string();
-        let yesterday = (Local::now() - Duration::days(1))
-            .format("%Y-%m-%d")
-            .to_string();
         tracing::debug!("memory open: root={}, project={}", root.display(), project);
         Mem {
             root,
             project,
             today,
-            yesterday,
         }
     }
 
@@ -141,6 +136,57 @@ impl Mem {
     }
     pub(crate) fn daily_file(&self, date: &str) -> PathBuf {
         self.daily_dir().join(format!("{date}.md"))
+    }
+
+    /// Up to the two most recent daily logs whose trimmed content is
+    /// non-empty, newest first. Scans `daily_dir()`, sorts filenames
+    /// (`YYYY-MM-DD.md`) descending, and skips empty/whitespace-only files by
+    /// continuing the scan rather than stopping at the first one.
+    fn recent_daily_logs(&self) -> Vec<(String, String)> {
+        let mut files: Vec<PathBuf> = match fs::read_dir(self.daily_dir()) {
+            Ok(rd) => rd.flatten().map(|e| e.path()).collect(),
+            Err(_) => return Vec::new(),
+        };
+        files.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+
+        let mut logs = Vec::new();
+        for path in files {
+            if logs.len() >= 2 {
+                break;
+            }
+            if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                continue;
+            }
+            let Some(date) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if !Self::is_daily_log_stem(date) {
+                continue;
+            }
+            let Ok(content) = fs::read_to_string(&path) else {
+                continue;
+            };
+            if content.trim().is_empty() {
+                continue;
+            }
+            logs.push((date.to_string(), content));
+        }
+        logs
+    }
+
+    /// True if `s` is exactly `YYYY-MM-DD` shaped (10 ASCII bytes, digits at every
+    /// position except the two hyphens). Used to make sure only real daily-log
+    /// files (never a stray `.tmp` from a crashed `atomic_write`, nor an unrelated
+    /// `.md` a user drops in `daily/`) are scanned and their filename interpolated
+    /// into the injected `<memory>` block.
+    fn is_daily_log_stem(s: &str) -> bool {
+        let b = s.as_bytes();
+        b.len() == 10
+            && b[4] == b'-'
+            && b[7] == b'-'
+            && b.iter()
+                .enumerate()
+                .all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit())
     }
 
     /// Sanitize a note name so it can never escape `notes/` (no traversal).
@@ -281,11 +327,18 @@ impl Mem {
                 .join("\n");
             push("Scratchpad (open items)", &open);
         }
-        if let Ok(d) = fs::read_to_string(self.daily_file(&self.yesterday)) {
-            push(&format!("Daily log {}", self.yesterday), &d);
-        }
-        if let Ok(d) = fs::read_to_string(self.daily_file(&self.today)) {
-            push(&format!("Daily log {} (today)", self.today), &d);
+        // Oldest first, matching the previous fixed-order layout; selection
+        // itself is now dynamic (see `recent_daily_logs`), full priority-order
+        // assembly and truncation are handled separately.
+        let mut logs = self.recent_daily_logs();
+        logs.reverse();
+        for (date, body) in &logs {
+            let title = if *date == self.today {
+                format!("Daily log {date} (today)")
+            } else {
+                format!("Daily log {date}")
+            };
+            push(&title, body);
         }
         if out.is_empty() {
             return None;
