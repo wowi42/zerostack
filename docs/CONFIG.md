@@ -152,7 +152,7 @@ Accepted top-level keys:
 | `max_text_file_size`      | integer | Maximum allowed file size in bytes for read/write tool operations. Default: `1048576` (1 MB).                                                                               |
 | `deny_repeated_reads`     | boolean | Block repeated reads of the same file section within a session until the file is edited or written. Default: `true`. Set to `false` to allow re-reading.                     |
 | `show_cost_always`        | boolean | Show the session cost in the status bar even when it is `$0.0000` (for example when the model has no per-token pricing configured). Default: `false`, which hides the cost until it is above zero. |
-| `compact_enabled`         | boolean | Master switch for all automatic conversation compaction (both between-turn and mid-turn). Default: `true`. When `false`, nothing is ever compacted automatically.            |
+| `compact_enabled`         | boolean | Master switch for all automatic conversation compaction (both between-turn and mid-turn). Default: `false`. When `false`, nothing is ever compacted automatically.            |
 | `mid_turn_compact_threshold` | number | Opt-in mid-turn compaction. Fraction of the context window (`0.0`–`1.0`) of real provider prompt pressure at which to compact *during* a turn, not just between turns. Unset by default, meaning no mid-turn compaction. Honored only when `compact_enabled` is `true`. Recommended starting value: `0.80`. See Mid-turn compaction below.            |
 | `always_show_welcome`     | boolean | Always show the welcome banner on startup, bypassing the one-shot marker file. Default: `false`.                                                                               |
 | `auto-update-prompts`     | boolean | When `true`, always regenerate prompts on version change without asking. When `false`, never regenerate. When unset, asks interactively.                                         |
@@ -569,6 +569,14 @@ Available items:
 The `git_changes` and `git_status` items run `git status` once a second (only
 when one of them is used). All other items are read from the session.
 
+## Status signals
+
+Requires the `status-signals` feature (included in the default build). Pass
+`--status-socket <path>` to have zerostack emit `start`, `stop`, and
+`git-conflict` events over a Unix domain socket at `<path>`, for external
+status bars or tooling to watch. This is separate from the in-TUI status bar
+above.
+
 ## Colors
 
 The `colors` object accepts an optional `scheme_type` field and three optional
@@ -971,9 +979,8 @@ model only when needed.
 [advisor]
 enabled = true
 model = "deepseek-v4-pro"
-# provider = "openrouter"         # defaults to main provider
 # max_uses = 3                    # max advisor calls per request (nil = unlimited)
-# human_handoff = false           # route advisor calls to the user instead
+# human_handoff = true            # route advisor calls to the user instead of a model (this is the default)
 # advisor_kilobytes_limit = 256   # max KB of conversation context (split half head / half tail)
 ```
 
@@ -984,7 +991,7 @@ advisor:
   enabled: true
   model: deepseek-v4-pro
   max_uses: 3
-  human_handoff: false
+  human_handoff: true
   advisor_kilobytes_limit: 256
 ```
 
@@ -994,9 +1001,8 @@ advisor:
 |------|-------------|
 | `--advisor` | Enable the advisor tool |
 | `--advisor-model <name>` | Advisor model name |
-| `--advisor-provider <name>` | Provider for the advisor model |
 | `--advisor-max-uses <n>` | Max advisor calls per request |
-| `--advisor-human-handoff` | Route advisor calls to the user |
+| `--advisor-human-handoff[=<bool>]` | Route advisor calls to the user instead of a model. Bare flag or `=true` enables it; CLI default is `false` unless passed |
 | `--advisor-kilobytes-limit <n>` | Max KB of conversation context sent to advisor (default: 256) |
 
 ### Human handoff mode

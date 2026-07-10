@@ -191,6 +191,10 @@ Built-in prompts:
 | **`review-security`** | Security review mode — finds exploitable vulnerabilities                 |
 | **`simplify`**        | Code simplification mode — refines for clarity without changing behavior |
 | **`write-prompt`**    | Prompt writing mode — creates and optimizes agent prompts                |
+| **`refactor`**        | Refactoring mode — restructures code for design and maintainability while preserving behavior |
+| **`autoconfig`**      | Configuration mode — reads docs and edits your config/prompts, writes no code |
+| **`orchestrator`**    | Orchestration mode — combines direct tool use with parallel `zerostack` subprocess invocations for heavier work |
+| **`write-text`**      | Prose-writing mode — drafts and reviews non-code writing (docs, posts, emails) |
 
 You can also create custom prompts by placing markdown files in
 `$XDG_CONFIG_HOME/zerostack/prompts/` and referencing them by name.
