@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{Duration, Local};
+use chrono::Local;
 use regex::RegexBuilder;
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
@@ -96,7 +96,18 @@ pub struct Mem {
     /// projects don't pollute each other. MEMORY.md stays global (shared).
     pub project: String,
     pub today: String,
-    pub yesterday: String,
+}
+
+/// A daily log selected for injection: the file's date stem and its raw content.
+struct DailyLog {
+    date: String,
+    content: String,
+}
+
+/// One block of the injected context: a rendered heading and its body.
+struct Section {
+    title: String,
+    body: String,
 }
 
 impl Mem {
@@ -112,15 +123,11 @@ impl Mem {
             .map(|p| project_slug(&p))
             .unwrap_or_else(|_| "default".to_string());
         let today = Local::now().format("%Y-%m-%d").to_string();
-        let yesterday = (Local::now() - Duration::days(1))
-            .format("%Y-%m-%d")
-            .to_string();
         tracing::debug!("memory open: root={}, project={}", root.display(), project);
         Mem {
             root,
             project,
             today,
-            yesterday,
         }
     }
 
@@ -141,6 +148,60 @@ impl Mem {
     }
     pub(crate) fn daily_file(&self, date: &str) -> PathBuf {
         self.daily_dir().join(format!("{date}.md"))
+    }
+
+    /// Up to the two most recent daily logs whose trimmed content is
+    /// non-empty, newest first. Scans `daily_dir()`, sorts filenames
+    /// (`YYYY-MM-DD.md`) descending, and skips empty/whitespace-only files by
+    /// continuing the scan rather than stopping at the first one.
+    fn recent_daily_logs(&self) -> Vec<DailyLog> {
+        let mut files: Vec<PathBuf> = match fs::read_dir(self.daily_dir()) {
+            Ok(rd) => rd.flatten().map(|e| e.path()).collect(),
+            Err(_) => return Vec::new(),
+        };
+        files.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+
+        let mut logs = Vec::new();
+        for path in files {
+            if logs.len() >= 2 {
+                break;
+            }
+            if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                continue;
+            }
+            let Some(date) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if !Self::is_daily_log_stem(date) {
+                continue;
+            }
+            let Ok(content) = fs::read_to_string(&path) else {
+                continue;
+            };
+            if content.trim().is_empty() {
+                continue;
+            }
+            logs.push(DailyLog {
+                date: date.to_string(),
+                content,
+            });
+        }
+        logs
+    }
+
+    /// True if `s` is exactly `YYYY-MM-DD` shaped (10 ASCII bytes, digits at every
+    /// position except the two hyphens). Used to make sure only real daily-log
+    /// files (never a stray `.tmp` from a crashed `atomic_write`, nor an unrelated
+    /// `.md` a user drops in `daily/`) are scanned and their filename interpolated
+    /// into the injected `<memory>` block.
+    fn is_daily_log_stem(s: &str) -> bool {
+        let b = s.as_bytes();
+        b.len() == 10
+            && b[4] == b'-'
+            && b[7] == b'-'
+            && b.iter()
+                .enumerate()
+                .all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit())
     }
 
     /// Sanitize a note name so it can never escape `notes/` (no traversal).
@@ -247,21 +308,36 @@ impl Mem {
         Ok(())
     }
 
-    /// The block injected into the system prompt every turn: long-term memory +
-    /// open scratchpad items + today's & yesterday's logs. Notes and older daily
-    /// logs are deliberately excluded.
+    fn daily_title(date: &str, today: &str) -> String {
+        if date == today {
+            format!("Daily log {date} (today)")
+        } else {
+            format!("Daily log {date}")
+        }
+    }
+
+    fn truncated_marker(title: &str) -> String {
+        format!("\n…[section truncated: {title}]")
+    }
+
+    fn omitted_marker(title: &str) -> String {
+        format!("\n\n…[section omitted: {title}]")
+    }
+
+    /// The block injected into the system prompt every turn, assembled from up
+    /// to four sections in priority order (highest first): scratchpad open
+    /// items, the newest selected daily log, long-term memory (MEMORY.md), and
+    /// the second-newest selected daily log. See `recent_daily_logs` for how
+    /// the two daily logs are chosen. Notes are deliberately excluded.
+    ///
+    /// Sections are included whole while they fit within `MAX_INJECT_BYTES`;
+    /// the first section that doesn't fit whole is tail-truncated to consume
+    /// exactly what's left (marked `…[section truncated: <title>]`), and every
+    /// section after that is omitted entirely (marked
+    /// `…[section omitted: <title>]`) rather than displacing a higher-priority
+    /// section that already fit. A final whole-string `truncate_cjk` pass is
+    /// kept as a hard backstop against unexpected overrun.
     pub fn context_block(&self) -> Option<String> {
-        let mut out = String::new();
-        let mut push = |title: &str, body: &str| {
-            let b = body.trim();
-            if b.is_empty() {
-                return;
-            }
-            out.push_str("\n\n## ");
-            out.push_str(title);
-            out.push('\n');
-            out.push_str(b);
-        };
         let mut m = String::new();
         if let Ok(meta) = std::fs::metadata(self.memory_md())
             && meta.len() <= 128 * 1024
@@ -269,9 +345,10 @@ impl Mem {
         {
             m = content;
         }
-        push("Long-term memory (MEMORY.md)", &m);
+
+        let mut scratch = String::new();
         if let Ok(s) = fs::read_to_string(self.scratchpad()) {
-            let open: String = s
+            scratch = s
                 .lines()
                 .filter(|l| {
                     let t = l.trim_start();
@@ -279,17 +356,72 @@ impl Mem {
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
-            push("Scratchpad (open items)", &open);
         }
-        if let Ok(d) = fs::read_to_string(self.daily_file(&self.yesterday)) {
-            push(&format!("Daily log {}", self.yesterday), &d);
+
+        let logs = self.recent_daily_logs();
+
+        let mut sections: Vec<Section> = Vec::new();
+        if !scratch.trim().is_empty() {
+            sections.push(Section {
+                title: "Scratchpad (open items)".to_string(),
+                body: scratch,
+            });
         }
-        if let Ok(d) = fs::read_to_string(self.daily_file(&self.today)) {
-            push(&format!("Daily log {} (today)", self.today), &d);
+        if let Some(log) = logs.first() {
+            sections.push(Section {
+                title: Self::daily_title(&log.date, &self.today),
+                body: log.content.clone(),
+            });
         }
-        if out.is_empty() {
+        if !m.trim().is_empty() {
+            sections.push(Section {
+                title: "Long-term memory (MEMORY.md)".to_string(),
+                body: m,
+            });
+        }
+        if let Some(log) = logs.get(1) {
+            sections.push(Section {
+                title: Self::daily_title(&log.date, &self.today),
+                body: log.content.clone(),
+            });
+        }
+
+        if sections.is_empty() {
             return None;
         }
+
+        let mut out = String::new();
+        let mut remaining = MAX_INJECT_BYTES;
+        let mut boundary_hit = false;
+        for (i, section) in sections.iter().enumerate() {
+            let title = &section.title;
+            let body = section.body.trim();
+            if boundary_hit {
+                out.push_str(&Self::omitted_marker(title));
+                continue;
+            }
+            let header = format!("\n\n## {title}\n");
+            let full_len = header.len() + body.len();
+            if full_len <= remaining {
+                out.push_str(&header);
+                out.push_str(body);
+                remaining -= full_len;
+                continue;
+            }
+            boundary_hit = true;
+            let marker = Self::truncated_marker(title);
+            let trailing_overhead: usize = sections[i + 1..]
+                .iter()
+                .map(|s| Self::omitted_marker(&s.title).len())
+                .sum();
+            let cut_len = remaining
+                .saturating_sub(header.len())
+                .saturating_sub(marker.len())
+                .saturating_sub(trailing_overhead);
+            out.push_str(&header);
+            out.push_str(&truncate_cjk(body, cut_len, &marker));
+        }
+
         out = truncate_cjk(&out, MAX_INJECT_BYTES, "\n…[memory truncated]");
         // Memory is untrusted historical context, not instructions.
         Some(format!(
@@ -307,7 +439,7 @@ impl Mem {
     /// output is capped, the least-relevant files drop off first. A file whose
     /// name (but not content) matches falls back to a short preview, ranked below
     /// any content hit. Older daily logs ARE searched (unlike the auto-injected
-    /// context block, which is limited to today + yesterday).
+    /// context block, which selects only the two most recent non-empty logs).
     pub fn search(&self, query: &str) -> SearchResults {
         tracing::debug!("memory search: '{}'", query);
         // Distinct, non-empty terms, preserving query order.
