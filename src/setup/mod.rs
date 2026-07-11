@@ -898,12 +898,8 @@ fn handle_manage_providers_key(
                 if let Some(name) = providers.get(selected) {
                     let is_builtin = builtin_provider_names().contains(&name.as_str());
                     if !is_builtin {
-                        new_cfg.custom_providers.as_mut().map(|m| {
-                            m.remove(name);
-                        });
-                        new_cfg.api_keys.as_mut().map(|m| {
-                            m.remove(name);
-                        });
+                        if let Some(m) = new_cfg.custom_providers.as_mut() { m.remove(name); }
+                        if let Some(m) = new_cfg.api_keys.as_mut() { m.remove(name); }
                     }
                 }
                 let new_selected = selected.min(count.saturating_sub(2));
@@ -1262,9 +1258,7 @@ fn handle_manage_models_key(
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 let mut new_cfg = ctx.cfg.clone();
                 if let Some((name, _)) = models.get(selected) {
-                    new_cfg.quick_models.as_mut().map(|m| {
-                        m.remove(name);
-                    });
+                    if let Some(m) = new_cfg.quick_models.as_mut() { m.remove(name); }
                 }
                 let new_selected = selected.min(count.saturating_sub(2));
                 Ok(KeyResult::Screen(Screen::ManageModels {
@@ -1662,13 +1656,12 @@ fn apply_autoconfigure(cfg: &mut Config) {
     ];
 
     for (provider, env_var) in providers_to_check {
-        if let Ok(val) = std::env::var(env_var) {
-            if !val.is_empty() {
+        if let Ok(val) = std::env::var(env_var)
+            && !val.is_empty() {
                 let keys = cfg.api_keys.get_or_insert_with(HashMap::new);
                 if !keys.contains_key(*provider) {
                     keys.insert(provider.to_string(), val.clone());
                 }
             }
-        }
     }
 }
