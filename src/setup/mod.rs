@@ -1347,6 +1347,10 @@ fn make_model_detail_state(is_new: bool, name: String, cfg: &Config) -> Screen {
     let output_cost = qm
         .map(|q| q.output_token_cost.to_string())
         .unwrap_or_else(|| "0.0".to_string());
+    let context_window = qm
+        .and_then(|q| q.context_window)
+        .map(|c| c.to_string())
+        .unwrap_or_default();
 
     let fields = vec![
         FieldDef {
@@ -1376,6 +1380,12 @@ fn make_model_detail_state(is_new: bool, name: String, cfg: &Config) -> Screen {
         FieldDef {
             label: "Output Cost ($/M)",
             value: output_cost,
+            editable: true,
+            masked: false,
+        },
+        FieldDef {
+            label: "Context Window",
+            value: context_window,
             editable: true,
             masked: false,
         },
@@ -1575,6 +1585,18 @@ fn handle_model_detail_key(ctx: &Ctx, key: KeyEvent) -> anyhow::Result<KeyResult
                     .and_then(|f| f.value.parse::<f64>().ok())
                     .unwrap_or(0.0);
 
+                let new_context_window = fields
+                    .iter()
+                    .find(|f| f.label == "Context Window")
+                    .and_then(|f| {
+                        let v = f.value.trim();
+                        if v.is_empty() {
+                            None
+                        } else {
+                            v.parse::<u64>().ok()
+                        }
+                    });
+
                 if new_name.is_empty() {
                     return Ok(KeyResult::Screen(make_screen(
                         fields,
@@ -1612,7 +1634,7 @@ fn handle_model_detail_key(ctx: &Ctx, key: KeyEvent) -> anyhow::Result<KeyResult
                         reserve_tokens: None,
                         temperature: None,
                         extra_body: None,
-                        context_window: None,
+                        context_window: new_context_window,
                     },
                 );
 

@@ -40,8 +40,12 @@ pub fn resolve_provider_config(
     custom_providers: &HashMap<String, CustomProviderConfig>,
 ) -> anyhow::Result<ProviderConfig> {
     if let Some(custom) = custom_providers.get(name) {
-        let kind = ProviderKind::from_name(&custom.provider_type)
-            .ok_or_else(|| anyhow::anyhow!("Unknown provider type: {}", custom.provider_type))?;
+        let kind = ProviderKind::from_name(&custom.provider_type).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Unknown provider type: {}. Run `zerostack --setup` to configure providers.",
+                custom.provider_type
+            )
+        })?;
         return Ok(ProviderConfig {
             kind,
             base_url: Some(custom.base_url.clone()),
@@ -51,7 +55,7 @@ pub fn resolve_provider_config(
     }
     let kind = ProviderKind::from_name(name).ok_or_else(|| {
         anyhow::anyhow!(
-            "Unknown provider: '{}'. Supported: openrouter, openai, anthropic, gemini, ollama",
+            "Unknown provider: '{}'. Supported: openrouter, openai, anthropic, gemini, ollama. Run `zerostack --setup` to configure providers.",
             name
         )
     })?;
