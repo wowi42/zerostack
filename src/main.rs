@@ -17,6 +17,7 @@ mod provider;
 mod retry;
 mod sandbox;
 mod session;
+mod setup;
 mod ui;
 
 #[cfg(test)]
@@ -163,6 +164,18 @@ async fn run() -> anyhow::Result<()> {
     if cli.print_config {
         print_config(&cli, &cfg);
         return Ok(());
+    }
+
+    if cli.setup {
+        match setup::run(&mut cfg)? {
+            setup::SetupOutcome::Quit => return Ok(()),
+            setup::SetupOutcome::LaunchAutoconfigure => {
+                // autoconfigure was already applied in setup; fall through to launch
+            }
+            setup::SetupOutcome::Launch => {
+                // fall through to launch
+            }
+        }
     }
 
     if cli.tutor {
