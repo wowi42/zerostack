@@ -1182,7 +1182,18 @@ daily (name=YYYY-MM-DD, omit for today), note (name=<stem>), or list (enumerate 
         let body = match args.source.as_str() {
             "long_term" => Mem::read_capped(&m.memory_md()),
             "scratchpad" => Mem::read_capped(&m.scratchpad()),
-            "daily" => Mem::read_capped(&m.daily_file(args.name.as_deref().unwrap_or(&m.today))),
+            "daily" => {
+                // `name` is caller-supplied; validate before splicing it into a
+                // path, since `daily_file` does no sanitization (an unchecked
+                // name would traverse out of the memory store).
+                let date = args.name.as_deref().unwrap_or(&m.today);
+                if !is_safe_daily_name(date) {
+                    return Err(ToolError::Msg(
+                        "invalid daily date name (expected YYYY-MM-DD)".into(),
+                    ));
+                }
+                Mem::read_capped(&m.daily_file(date))
+            }
             "note" => {
                 let name = args
                     .name
