@@ -235,8 +235,12 @@ pub async fn build_agent_inner<M: CompletionModel + 'static>(
 
         #[cfg(feature = "memory")]
         {
-            use crate::extras::memory::{MemoryRead, MemorySearch, MemoryWrite};
+            use crate::extras::memory::{MemoryEdit, MemoryRead, MemorySearch, MemoryWrite};
             all_tools.push(Box::new(MemoryWrite::new(
+                permission.clone(),
+                ask_tx.clone(),
+            )));
+            all_tools.push(Box::new(MemoryEdit::new(
                 permission.clone(),
                 ask_tx.clone(),
             )));
