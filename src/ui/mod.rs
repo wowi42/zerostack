@@ -1,5 +1,6 @@
 mod event_handler;
 pub(crate) mod events;
+pub(crate) mod feed;
 pub(crate) mod input;
 pub(crate) mod markdown;
 mod permission_handler;
@@ -9,6 +10,11 @@ pub(crate) mod slash;
 pub(crate) mod statusline;
 mod terminal;
 pub(crate) mod utils;
+
+pub mod app;
+
+pub use app::{AgentRunState, App, BtwState, ChainState, UiContext};
+pub use feed::{Feed, FeedBlock};
 
 use std::io::{self, Write};
 use std::sync::Arc;
@@ -78,7 +84,7 @@ pub(super) const C_BTW: Color = Color::Cyan;
 pub(super) const C_HANDOFF: Color = Color::Green;
 
 #[allow(clippy::too_many_arguments)]
-fn refresh_display(
+pub(super) fn refresh_display(
     renderer: &mut Renderer,
     input: &mut InputEditor,
     session: &Session,
@@ -113,7 +119,7 @@ fn refresh_display(
     Ok(())
 }
 
-fn spawn_event_thread(
+pub(super) fn spawn_event_thread(
     user_tx: mpsc::Sender<UserEvent>,
     running: Arc<AtomicBool>,
 ) -> std::thread::JoinHandle<()> {
@@ -175,7 +181,7 @@ fn spawn_event_thread(
 
 /// Lazily initialise the MCP client manager (connects only on first use).
 #[cfg(feature = "mcp")]
-async fn ensure_mcp_manager<'a>(
+pub(super) async fn ensure_mcp_manager<'a>(
     mcp: &'a mut Option<McpClientManager>,
     cfg: &'a Config,
 ) -> Option<&'a McpClientManager> {
@@ -245,7 +251,7 @@ pub(crate) fn classify_submission(is_running: bool, text: &str) -> SubmitAction 
 
 #[cfg(feature = "git-worktree")]
 #[allow(clippy::too_many_arguments)]
-async fn spawn_merge_agent(
+pub(super) async fn spawn_merge_agent(
     branch: &str,
     target: &str,
     main_path: &str,
@@ -349,13 +355,13 @@ async fn spawn_merge_agent(
 }
 /// Result of a background agent prebuild.
 #[cfg(feature = "mcp")]
-type PrebuildPayload = (AnyAgent, Option<McpClientManager>);
+pub(super) type PrebuildPayload = (AnyAgent, Option<McpClientManager>);
 #[cfg(not(feature = "mcp"))]
-type PrebuildPayload = AnyAgent;
+pub(super) type PrebuildPayload = AnyAgent;
 
 /// If the background prebuild hasn't delivered yet, block until it does.
 #[cfg(feature = "mcp")]
-async fn resolve_prebuild<'a>(
+pub(super) async fn resolve_prebuild<'a>(
     agent: &'a mut Option<AnyAgent>,
     mcp_manager: &'a mut Option<McpClientManager>,
     prebuild_rx: &'a mut Option<mpsc::Receiver<PrebuildPayload>>,
@@ -373,7 +379,7 @@ async fn resolve_prebuild<'a>(
 }
 
 #[cfg(not(feature = "mcp"))]
-fn resolve_prebuild<'a>(
+pub(super) fn resolve_prebuild<'a>(
     agent: &'a mut Option<AnyAgent>,
     prebuild_rx: &'a mut Option<mpsc::Receiver<PrebuildPayload>>,
 ) -> impl std::future::Future<Output = ()> + 'a {
@@ -395,7 +401,7 @@ fn resolve_prebuild<'a>(
 /// "at most one main run" invariant is enforced in one spot. Callers must ensure
 /// no run is already active (otherwise the previous one would be orphaned).
 #[allow(clippy::too_many_arguments)]
-async fn start_main_run(
+pub(super) async fn start_main_run(
     text: &str,
     agent: &mut Option<AnyAgent>,
     client: &AnyClient,
@@ -491,7 +497,7 @@ async fn start_main_run(
 /// I already did," not as new user instructions. The narrow-tool-calls line is
 /// always present because any mid-turn fire means the configured ceiling was
 /// hit, so the urgency always applies.
-const MID_TURN_CONTINUE_PROMPT: &str = "[Context was compacted to save space; \
+pub(super) const MID_TURN_CONTINUE_PROMPT: &str = "[Context was compacted to save space; \
 the full prior history is in the system summary above.]\n\nContinue with the \
 user's original task. Do not redo work already completed per the summary; focus \
 on what remains. Context was tight, so prefer narrower follow-up tool calls over \
@@ -511,7 +517,7 @@ wide ones until pressure subsides.";
 /// context, which the respawn achieves even when the session itself is under the
 /// between-turn limit and `handle_compress` is a no-op.
 #[allow(clippy::too_many_arguments)]
-async fn mid_turn_compact_and_respawn(
+pub(super) async fn mid_turn_compact_and_respawn(
     pressure: f64,
     renderer: &mut Renderer,
     agent: &mut Option<AnyAgent>,
@@ -652,7 +658,7 @@ async fn mid_turn_compact_and_respawn(
 /// full arithmetic — the model and context-window combination is simply too
 /// small to run the agentic loop on this task.
 #[allow(clippy::too_many_arguments)]
-fn stop_turn_context_exhausted(
+pub(super) fn stop_turn_context_exhausted(
     prompt_tokens: u64,
     threshold: f64,
     renderer: &mut Renderer,
@@ -2814,7 +2820,7 @@ pub async fn run_interactive(
 }
 
 #[cfg(feature = "advisor")]
-async fn handle_human_handoff(
+pub(super) async fn handle_human_handoff(
     req: crate::extras::advisor::HandoffRequest,
     renderer: &mut Renderer,
     user_rx: &mut mpsc::Receiver<UserEvent>,

@@ -15,7 +15,7 @@ Single crate, no workspace. All source under `src/`.
 | `src/agent/` | Agent lifecycle: `builder.rs` (rig Agent construction + tool injection), `runner.rs` (spawn, stream), `prompt.rs` (system prompts), `tools/` (8 core tool impls: read, write, edit, bash, grep, find_files, list_dir, todo; plus feature-gated `TaskTool` and `AdvisorTool`) |
 | `src/session/` | Session state: `mod.rs` (messages, compactions, costs), `storage.rs` (JSON file I/O), `chat_history.rs` |
 | `src/permission/` | Security: `checker.rs` (glob+regex rules, doom-loop detection), `ask.rs` (user prompt UI), `pattern.rs` |
-| `src/ui/` | Custom TUI on crossterm (no ratatui): `mod.rs` (event loop), `terminal.rs` (raw mode guard), `renderer.rs` (line buffer + viewport), `input/` (text editor + pickers), `status.rs`, `markdown.rs`, `event_handler.rs`, `cmd_picker.rs` |
+| `src/ui/` | Custom TUI on crossterm (no ratatui): `mod.rs` (event loop), `app.rs` (stateful `App` struct, state grouping), `feed.rs` (structured conversation blocks), `terminal.rs` (raw mode guard), `renderer.rs` (line buffer + viewport), `input/` (text editor + pickers), `status.rs`, `markdown.rs`, `event_handler.rs`, `cmd_picker.rs` |
 | `src/context/` | Context gathering: embedded prompt themes (`prompts.rs`, `themes.rs`), AGENTS.md/ARCHITECTURE.md loading |
 | `src/config/` | Configuration: `load.rs` (TOML/YAML/JSON from disk+env), `types.rs` (QuickModel, CustomProvider, Colors, EditSystem) |
 | `src/extras/` | Feature-gated extensions: `loop/` (headless), `mcp/` (MCP client), `acp/` (ACP server), `memory/` (persistent memory), `subagents/` (parallel task delegation), `git_worktree/`, `archmd/`, `advisor/` (external model consultation, `/advisor`), `multimodal/` (image/PDF ingestion, gated separately by `multimodal`/`pdf`), `hooks/` (lifecycle hook dispatch: `PreToolUse`/`PostToolUse`/`Stop`/`UserPromptSubmit`/session+subagent events, trust-hash confirmation). Two subsystems are always compiled (not feature-gated): `chain/` (brainstorm→plan→code prompt transitions) and `status_signals` (Unix-socket start/stop/git-conflict signals, itself gated by the `status-signals` feature at the call site) |
@@ -36,6 +36,8 @@ Single crate, no workspace. All source under `src/`.
 - **`TerminalGuard`** (`src/ui/terminal.rs:10`) — RAII for raw mode, alt screen, mouse capture.
 - **`Renderer`** (`src/ui/renderer.rs:52`) — line-buffered viewport, markdown rendering, scroll/selection.
 - **`InputEditor`** (`src/ui/input/mod.rs:21`) — text buffer, cursor, history, kill-ring, picker integration.
+- **`App`** (`src/ui/app.rs:108`) — stateful TUI application struct holding all channels, state, and references. Groups related state into `AgentRunState`, `ChainState`, `BtwState`, and `UiContext` structs.
+- **`Feed`** (`src/ui/feed.rs:54`) — structured conversation blocks (`FeedBlock` enum) with `lines(width)` producing renderer-ready `LineEntry` items, separate from `Renderer` for testable layout.
 - **`ContextFiles`** (`src/context/mod.rs:57`) — loaded agents, prompts, themes, architecture docs.
 - **`HookDispatcher`** (`src/extras/hooks/dispatcher.rs:60`, feature `hooks`) — merges `PreToolUse` verdicts (`Allow`/`Defer`/`Ask`/`Deny`, most severe wins) and applies `PostToolUse`/lifecycle `Decision`s (`Continue`/`Block`/`Rewrite`). Wraps every tool via `wrap_from_global()` (`src/agent/builder.rs:276`), outside each tool's own `PermissionChecker` check.
 
