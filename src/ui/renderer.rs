@@ -11,6 +11,7 @@ use crossterm::terminal::{Clear, ClearType, ScrollUp};
 use regex::Regex;
 use smallvec::{SmallVec, smallvec};
 
+use super::feed::Feed;
 use super::markdown::word_wrap;
 use super::statusline::StatusSpan;
 use super::utils::{char_display_width, display_width, resolve_color};
@@ -85,6 +86,8 @@ pub struct Renderer {
     pub permission_prompt: Option<PermissionPrompt>,
     pub chain_prompt: Option<ChainPrompt>,
     pub chain_but_mode: bool,
+    /// Structured conversation blocks, testable without a terminal.
+    pub feed: Feed,
 }
 
 impl Renderer {
@@ -120,6 +123,7 @@ impl Renderer {
             permission_prompt: None,
             chain_prompt: None,
             chain_but_mode: false,
+            feed: Feed::new(),
         })
     }
 
@@ -198,6 +202,18 @@ impl Renderer {
 
     pub fn buffer_len(&self) -> usize {
         self.buffer.len()
+    }
+
+    /// Rebuild the line buffer from the feed. Returns the number of visual lines.
+    /// Call after feed changes to re-sync the buffer for rendering.
+    pub fn rebuild_from_feed(&mut self) -> usize {
+        let width = self.max_line_width();
+        let entries = self.feed.lines(width);
+        self.buffer = entries;
+        self.cursor_row = self.buffer.len() as u16;
+        self.col = 0;
+        self.scroll_offset = 0;
+        self.feed.total_visual_lines()
     }
 
     pub fn replace_from(&mut self, start: usize, lines: Vec<LineEntry>) {
@@ -624,6 +640,7 @@ impl Renderer {
     }
 
     pub fn write_line(&mut self, text: &str, color: Color) -> io::Result<()> {
+        self.feed.push_line(text, color);
         self.commit_partial();
         let max_width = self.max_line_width();
         for segment in text.split('\n') {

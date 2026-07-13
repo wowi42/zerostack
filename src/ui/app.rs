@@ -17,13 +17,15 @@ use crate::provider::{AnyAgent, AnyClient};
 use crate::sandbox::Sandbox;
 use crate::session::{MessageRole, Session};
 
+use super::event_handler::ensure_agent;
 use super::events::sanitize_output;
 use super::input::InputEditor;
 use super::renderer::{self, Renderer};
+use super::slash::handle_compress;
 use super::statusline;
 use super::terminal::TerminalGuard;
 use super::{
-    PrebuildPayload, copy_to_clipboard, parse_color, refresh_display, spawn_event_thread,
+    PrebuildPayload, copy_to_clipboard, parse_color, resolve_prebuild, spawn_event_thread,
     to_ansi_256,
 };
 
@@ -299,19 +301,28 @@ impl<'a> App<'a> {
         let btw_in = self.btw.total_in;
         let btw_out = self.btw.total_out;
         let is_running = self.agent_run.is_running;
-        refresh_display(
-            &mut self.ui.renderer,
-            &mut self.ui.input,
-            self.session,
-            is_running,
-            loop_label.as_deref(),
-            prompt_name.as_deref(),
-            perm_mode.as_deref(),
-            chain_label.as_deref(),
+        self.ui.renderer.sync_input_height(&self.ui.input.buffer)?;
+        self.ui.renderer.render_viewport()?;
+        let statusline_ctx = crate::ui::statusline::StatusContext {
+            loop_label: loop_label.as_deref(),
+            prompt_name: prompt_name.as_deref(),
+            perm_mode: perm_mode.as_deref(),
+            chain_label: chain_label.as_deref(),
             btw_cost,
             btw_in,
             btw_out,
-        )
+        };
+        let statusline = crate::ui::statusline::build(self.session, &statusline_ctx);
+        self.ui.renderer.draw_bottom(
+            &self.ui.input.buffer,
+            self.ui.input.cursor,
+            &statusline,
+            is_running,
+        )?;
+        if let Some(ref mut picker) = self.ui.input.picker {
+            picker.draw()?;
+        }
+        Ok(())
     }
 
     // ── agent lifecycle ──
@@ -342,6 +353,357 @@ impl<'a> App<'a> {
         );
     }
 
+    // ── agent lifecycle: start run ──
+
+    pub async fn start_main_run(&mut self, text: &str) {
+        #[cfg(feature = "mcp")]
+        resolve_prebuild(
+            &mut self.agent,
+            &mut self.mcp_manager,
+            &mut self.prebuild_rx,
+        )
+        .await;
+        #[cfg(not(feature = "mcp"))]
+        resolve_prebuild(&mut self.agent, &mut self.prebuild_rx).await;
+
+        #[cfg(feature = "mcp")]
+        let mcp_ref = ensure_mcp_manager(&mut self.mcp_manager, self.cfg).await;
+        ensure_agent(
+            &mut self.agent,
+            &self.client,
+            self.session,
+            self.cli,
+            self.cfg,
+            self.context,
+            &self.permission,
+            &self.ask_tx,
+            &self.sandbox,
+            self.ui.reasoning_enabled,
+            #[cfg(feature = "mcp")]
+            mcp_ref,
+        )
+        .await;
+        let history = crate::agent::runner::convert_history(self.session);
+        #[cfg(feature = "multimodal")]
+        let history = {
+            let media = self.session.drain_media();
+            if media.is_empty() {
+                history
+            } else {
+                let mut h = history;
+                h.extend(crate::agent::runner::media_to_messages(&media));
+                h
+            }
+        };
+        let runner = self
+            .agent
+            .as_ref()
+            .unwrap()
+            .clone()
+            .spawn_runner(
+                text.to_string(),
+                history,
+                self.cfg.retry.clone(),
+                #[cfg(feature = "hooks")]
+                None,
+            )
+            .await;
+        self.agent_run.agent_rx = Some(runner.event_rx);
+        self.agent_run.main_abort = Some(runner.abort_handle);
+        self.agent_run.is_running = true;
+        if let Some(ss) = self.status_signals.as_ref() {
+            ss.send_start();
+        }
+        self.session.add_message(MessageRole::User, text);
+        self.agent_run.pending_send = Some(text.to_string());
+        #[cfg(feature = "advisor")]
+        crate::extras::advisor::set_session_messages(self.session.messages.clone());
+        if !self.cli.no_session {
+            let _ = crate::session::chat_history::append_entry(
+                &crate::session::chat_history::ChatHistoryEntry {
+                    content: text.to_string(),
+                    timestamp: self.session.updated_at.clone(),
+                },
+            );
+        }
+    }
+
+    pub async fn mid_turn_compact_and_respawn(&mut self, pressure: f64) -> anyhow::Result<()> {
+        if let Some(h) = self.agent_run.main_abort.take() {
+            h.abort();
+        }
+        self.agent_run.is_running = false;
+        self.agent_run.agent_rx = None;
+        self.agent_run.was_reasoning = false;
+
+        let mut recap = String::new();
+        if !self.agent_run.response_buf.trim().is_empty() {
+            recap.push_str(self.agent_run.response_buf.trim());
+            recap.push_str("\n\n");
+        }
+        if !self.agent_run.turn_trace.is_empty() {
+            recap.push_str("[Progress this turn before context compaction]\n");
+            for line in self.agent_run.turn_trace.iter() {
+                recap.push_str(line);
+                recap.push('\n');
+            }
+        }
+        let recap = recap.trim();
+        if !recap.is_empty() {
+            self.session.add_message(MessageRole::Assistant, recap);
+        }
+        self.agent_run.turn_trace.clear();
+        self.agent_run.response_buf.clear();
+        self.agent_run.response_start_line = None;
+        self.agent_run.agent_line_started = false;
+
+        self.ui.renderer.write_line(
+            &format!(
+                "mid-turn context relief, restarting (at {}%)...",
+                (pressure * 100.0).round() as u64
+            ),
+            crossterm::style::Color::DarkGrey,
+        )?;
+
+        #[cfg(feature = "mcp")]
+        let mcp_ref = ensure_mcp_manager(&mut self.mcp_manager, self.cfg).await;
+        let compress_result = handle_compress(
+            None,
+            true,
+            &mut self.agent,
+            &mut self.client,
+            &mut self.ui.renderer,
+            self.session,
+            self.cli,
+            self.cfg,
+            self.context,
+            self.ui.reasoning_enabled,
+            &self.permission,
+            &self.ask_tx,
+            &self.sandbox,
+            #[cfg(feature = "mcp")]
+            mcp_ref,
+        )
+        .await;
+        if let Err(e) = compress_result {
+            self.ui
+                .renderer
+                .write_line(&format!("mid-turn compact error: {}", e), C_ERROR)?;
+        }
+
+        #[cfg(feature = "mcp")]
+        let mcp_ref = ensure_mcp_manager(&mut self.mcp_manager, self.cfg).await;
+        ensure_agent(
+            &mut self.agent,
+            &self.client,
+            self.session,
+            self.cli,
+            self.cfg,
+            self.context,
+            &self.permission,
+            &self.ask_tx,
+            &self.sandbox,
+            self.ui.reasoning_enabled,
+            #[cfg(feature = "mcp")]
+            mcp_ref,
+        )
+        .await;
+        let history = crate::agent::runner::convert_history(self.session);
+        let runner = self
+            .agent
+            .as_ref()
+            .unwrap()
+            .clone()
+            .spawn_runner(
+                MID_TURN_CONTINUE_PROMPT.to_string(),
+                history,
+                self.cfg.retry.clone(),
+                #[cfg(feature = "hooks")]
+                None,
+            )
+            .await;
+        self.agent_run.agent_rx = Some(runner.event_rx);
+        self.agent_run.main_abort = Some(runner.abort_handle);
+        self.agent_run.is_running = true;
+        if let Some(ss) = self.status_signals.as_ref() {
+            ss.send_start();
+        }
+        Ok(())
+    }
+
+    pub fn stop_turn_context_exhausted(
+        &mut self,
+        prompt_tokens: u64,
+        threshold: f64,
+    ) -> anyhow::Result<()> {
+        if let Some(h) = self.agent_run.main_abort.take() {
+            h.abort();
+        }
+        self.agent_run.is_running = false;
+        self.agent_run.agent_rx = None;
+        self.agent_run.was_reasoning = false;
+        self.agent_run.agent_line_started = false;
+        self.agent_run.turn_trace.clear();
+        self.agent_run.response_buf.clear();
+        self.agent_run.response_start_line = None;
+        if let Some(ss) = self.status_signals.as_ref() {
+            ss.send_stop();
+        }
+
+        self.ui
+            .renderer
+            .write_line("error: not enough context to continue this turn.", C_ERROR)?;
+        self.ui.renderer.write_line(
+            "Compaction ran, but the next prompt was still over the mid-turn ceiling. \
+             Compacting again cannot help: what remains is the irreducible floor (system \
+             prompt, tool schemas, the kept-recent transcript, and reserved response \
+             space). Stopping the turn so the conversation is not corrupted.",
+            crossterm::style::Color::White,
+        )?;
+        self.ui
+            .renderer
+            .write_line("", crossterm::style::Color::White)?;
+        for line in super::context_exhausted_report(
+            prompt_tokens,
+            threshold,
+            self.session.context_window,
+            self.cfg.resolve_reserve_tokens(
+                &self.session.model,
+                &crate::config::quick_models_map(self.cfg),
+            ),
+            self.cfg.resolve_keep_recent_tokens(),
+        ) {
+            self.ui
+                .renderer
+                .write_line(&line, crossterm::style::Color::White)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "git-worktree")]
+    pub async fn spawn_merge_agent(
+        &mut self,
+        branch: &str,
+        target: &str,
+        main_path: &str,
+        wt_path: &str,
+        force_flag: bool,
+    ) {
+        let wt_remove_flag = if force_flag { "--force" } else { "" };
+        let branch_delete_flag = if force_flag { "-D" } else { "-d" };
+        let prompt = format!(
+            "I'm in a git worktree on branch '{branch}' at '{wt_path}'. \
+             Merge it into '{target}' in the main repo at '{main_path}'.\n\n\
+             Follow these steps:\n\
+             1. cd {main_path}\n\
+             2. git fetch --all\n\
+             3. git checkout {target}\n\
+             4. git pull --no-edit\n\
+             5. git merge --squash {branch}\n\
+             6. git commit --no-edit\n\n\
+             After step 5, CHECK THE EXIT CODE and output.\n\
+             - If the merge Succeeded (no conflicts), continue to step 6.\n\
+             - If there is a MERGE CONFLICT:\n\
+               a. Run: git diff --name-only --diff-filter=U\n\
+               b. Tell the user WHICH FILES have conflicts. Show them the list.\n\
+               c. Ask the user what to do. Give them these options:\n\
+                  - 'abort': run `git merge --abort`, do NOT push, do NOT delete anything, stop here.\n\
+                  - 'resolve <file>': you help them fix the conflict in that file.\n\
+                  - 'leave': leave the conflict state as-is for manual resolution.\n\
+               d. WAIT for the user's response before continuing.\n\
+               e. Follow their instruction.\n\n\
+             7. If the merge succeeded (or conflicts were resolved):\n\
+               - git worktree remove {wt_remove_flag} {wt_path}\n\
+               - git branch {branch_delete_flag} {branch}\n\n\
+             8. cd {main_path} and report completion.\n\n\
+             Important: Do NOT skip any step. Always check for conflicts after merge.",
+            branch = branch,
+            wt_path = wt_path,
+            target = target,
+            main_path = main_path,
+            wt_remove_flag = wt_remove_flag,
+            branch_delete_flag = branch_delete_flag
+        );
+        self.session.add_message(MessageRole::User, &prompt);
+        let history = crate::agent::runner::convert_history(self.session);
+        #[cfg(feature = "mcp")]
+        let mcp_ref = ensure_mcp_manager(&mut self.mcp_manager, self.cfg).await;
+        ensure_agent(
+            &mut self.agent,
+            &self.client,
+            self.session,
+            self.cli,
+            self.cfg,
+            self.context,
+            &self.permission,
+            &self.ask_tx,
+            &self.sandbox,
+            self.ui.reasoning_enabled,
+            #[cfg(feature = "mcp")]
+            mcp_ref,
+        )
+        .await;
+        let runner = self
+            .agent
+            .as_ref()
+            .unwrap()
+            .clone()
+            .spawn_runner(
+                prompt,
+                history,
+                self.cfg.retry.clone(),
+                #[cfg(feature = "hooks")]
+                None,
+            )
+            .await;
+        self.agent_run.agent_rx = Some(runner.event_rx);
+        self.agent_run.main_abort = Some(runner.abort_handle);
+        self.agent_run.is_running = true;
+        if let Some(ss) = self.status_signals.as_ref() {
+            ss.send_start();
+        }
+        self.wt_return_path = Some((
+            main_path.to_string(),
+            wt_path.to_string(),
+            branch.to_string(),
+            force_flag,
+        ));
+    }
+
+    pub async fn handle_agent_event(&mut self, event: AgentEvent) -> anyhow::Result<()> {
+        #[cfg(feature = "mcp")]
+        let mcp_ref = ensure_mcp_manager(&mut self.mcp_manager, self.cfg).await;
+        super::event_handler::handle_agent_event(
+            event,
+            &mut self.ui.renderer,
+            self.session,
+            self.cfg,
+            self.cli,
+            self.context,
+            &mut self.agent_run.is_running,
+            &mut self.agent_run.agent_rx,
+            &mut self.agent_run.agent_line_started,
+            &mut self.agent_run.response_buf,
+            &mut self.agent_run.response_start_line,
+            &mut self.agent_run.was_reasoning,
+            self.ui.show_reasoning,
+            &mut self.agent,
+            &mut self.client,
+            &mut self.loop_label,
+            &self.permission,
+            &self.ask_tx,
+            &self.sandbox,
+            &self.status_signals,
+            #[cfg(feature = "loop")]
+            &mut self.loop_state,
+            #[cfg(feature = "git-worktree")]
+            &mut self.wt_return_path,
+            #[cfg(feature = "mcp")]
+            mcp_ref,
+        )
+        .await
+    }
+
     // ── event loop ──
 
     pub async fn run(&mut self, auto_trigger_msg: Option<String>) -> anyhow::Result<()> {
@@ -350,15 +712,10 @@ impl<'a> App<'a> {
         use super::classify_submission;
         use super::event_handler::{ensure_agent, handle_agent_event};
         use super::events::{render_session, show_welcome};
-        use super::mid_turn_compact_and_respawn;
         use super::permission_handler::handle_permission_request;
         use super::resolve_prebuild;
         use super::slash::handle_compress;
         use super::slash::{apply_prompt_model, handle_slash, warm_model_cache};
-        #[cfg(feature = "git-worktree")]
-        use super::spawn_merge_agent;
-        use super::start_main_run;
-        use super::stop_turn_context_exhausted;
         use crossterm::event::{KeyCode, KeyModifiers};
 
         const TURN_TRACE_MAX: usize = 64;
@@ -906,16 +1263,7 @@ impl<'a> App<'a> {
                                             self.ui.renderer.write_line("", crossterm::style::Color::White)?;
                                             self.session.add_message(MessageRole::User, &msg);
                                             self.agent = None;
-                                            start_main_run(
-                                                &msg, &mut self.agent, &self.client, self.session, self.cli,
-                                                self.cfg, self.context, &self.permission, &self.ask_tx, &self.sandbox,
-                                                self.ui.reasoning_enabled, &mut self.agent_run.agent_rx,
-                                                &mut self.agent_run.main_abort, &mut self.agent_run.is_running,
-                                                &self.status_signals,
-                                                #[cfg(feature = "mcp")] &mut self.mcp_manager,
-                                                &mut self.prebuild_rx,
-                                                &mut self.agent_run.pending_send,
-                                            ).await;
+                                            self.start_main_run(&msg).await;
                                         }
                                         self.refresh()?;
                                         continue;
@@ -1045,16 +1393,7 @@ impl<'a> App<'a> {
                                     self.ui.renderer.write_line("", crossterm::style::Color::White)?;
                                     self.session.add_message(MessageRole::User, &msg);
                                     self.agent = None;
-                                    start_main_run(
-                                        &msg, &mut self.agent, &self.client, self.session, self.cli,
-                                        self.cfg, self.context, &self.permission, &self.ask_tx, &self.sandbox,
-                                        self.ui.reasoning_enabled, &mut self.agent_run.agent_rx,
-                                        &mut self.agent_run.main_abort, &mut self.agent_run.is_running,
-                                        &self.status_signals,
-                                        #[cfg(feature = "mcp")] &mut self.mcp_manager,
-                                        &mut self.prebuild_rx,
-                                        &mut self.agent_run.pending_send,
-                                    ).await;
+                                    self.start_main_run(&msg).await;
                                     self.refresh()?;
                                     continue;
                                 }
@@ -1360,17 +1699,7 @@ impl<'a> App<'a> {
                                                     let force_flag = self.cli.resolve_wt_force(self.cfg);
                                                     #[cfg(not(feature = "git-worktree"))]
                                                     let force_flag = false;
-                                                    spawn_merge_agent(
-                                                        branch, target, main_path, wt_path,
-                                                        force_flag,
-                                                        self.session,
-                                                        &mut self.agent, &self.client, self.cli, self.cfg, self.context,
-                                                        &self.permission, &self.ask_tx, &self.sandbox, self.ui.reasoning_enabled,
-                                                        &mut self.agent_run.agent_rx, &mut self.agent_run.main_abort, &mut self.agent_run.is_running,
-                                                        &self.status_signals,
-                                                        &mut self.wt_return_path,
-                                                        #[cfg(feature = "mcp")] &mut self.mcp_manager,
-                                                    ).await;
+                                                    self.spawn_merge_agent(branch, target, main_path, wt_path, force_flag).await;
                                                 }
                                                 git_worktree::DeferredWorktreeAction::Exit { main_path } => {
                                                     std::env::set_current_dir(main_path)
@@ -1590,15 +1919,7 @@ impl<'a> App<'a> {
                                     self.ui.renderer.write_line("", crossterm::style::Color::White)?;
                                     self.refresh()?;
 
-                                    start_main_run(
-                                        &text, &mut self.agent, &self.client, self.session, self.cli, self.cfg, self.context,
-                                        &self.permission, &self.ask_tx, &self.sandbox, self.ui.reasoning_enabled,
-                                        &mut self.agent_run.agent_rx, &mut self.agent_run.main_abort, &mut self.agent_run.is_running,
-                                        &self.status_signals,
-                                        #[cfg(feature = "mcp")] &mut self.mcp_manager,
-                                        &mut self.prebuild_rx,
-                                        &mut self.agent_run.pending_send,
-                                    ).await;
+                                    self.start_main_run(&text).await;
                                 }
                                 }
                                 self.refresh()?;
@@ -1680,24 +2001,10 @@ impl<'a> App<'a> {
                         let pressure = real_input_tokens as f64 / self.session.context_window as f64;
                         if pressure > threshold {
                             if self.agent_run.awaiting_compaction_relief {
-                                stop_turn_context_exhausted(
-                                    real_input_tokens, threshold, &mut self.ui.renderer, self.session, self.cfg,
-                                    &mut self.agent_run.agent_rx, &mut self.agent_run.main_abort, &mut self.agent_run.is_running,
-                                    &self.status_signals, &mut self.agent_run.turn_trace, &mut self.agent_run.response_buf,
-                                    &mut self.agent_run.response_start_line, &mut self.agent_run.agent_line_started,
-                                    &mut self.agent_run.was_reasoning,
-                                )?;
+                                self.stop_turn_context_exhausted(real_input_tokens, threshold)?;
                                 self.agent_run.awaiting_compaction_relief = false;
                             } else {
-                                mid_turn_compact_and_respawn(
-                                    pressure, &mut self.ui.renderer, &mut self.agent, &mut self.client, self.session,
-                                    self.cli, self.cfg, self.context, &self.permission, &self.ask_tx, &self.sandbox,
-                                    self.ui.reasoning_enabled, &mut self.agent_run.agent_rx, &mut self.agent_run.main_abort,
-                                    &mut self.agent_run.is_running, &self.status_signals, &mut self.agent_run.turn_trace,
-                                    &mut self.agent_run.response_buf, &mut self.agent_run.response_start_line,
-                                    &mut self.agent_run.agent_line_started, &mut self.agent_run.was_reasoning,
-                                    #[cfg(feature = "mcp")] &mut self.mcp_manager,
-                                ).await?;
+                                self.mid_turn_compact_and_respawn(pressure).await?;
                                 self.agent_run.awaiting_compaction_relief = true;
                             }
                             self.refresh()?;
@@ -1706,21 +2013,8 @@ impl<'a> App<'a> {
                             self.agent_run.awaiting_compaction_relief = false;
                         }
                     }
-                    #[cfg(feature = "mcp")]
-                    let mcp_ref = ensure_mcp_manager(&mut self.mcp_manager, self.cfg).await;
                     let turn_errored = matches!(&event, AgentEvent::Error(_));
-                    handle_agent_event(
-                        event, &mut self.ui.renderer, self.session, self.cfg, self.cli, self.context,
-                        &mut self.agent_run.is_running, &mut self.agent_run.agent_rx, &mut self.agent_run.agent_line_started,
-                        &mut self.agent_run.response_buf, &mut self.agent_run.response_start_line, &mut self.agent_run.was_reasoning,
-                        self.ui.show_reasoning,
-                        &mut self.agent, &mut self.client, &mut self.loop_label,
-                        &self.permission, &self.ask_tx, &self.sandbox,
-                        &self.status_signals,
-                        #[cfg(feature = "loop")] &mut self.loop_state,
-                        #[cfg(feature = "git-worktree")] &mut self.wt_return_path,
-                        #[cfg(feature = "mcp")] mcp_ref,
-                    ).await?;
+                    self.handle_agent_event(event).await?;
                     if turn_errored {
                         if let Some(text) = self.agent_run.pending_send.take() {
                             let len = self.session.messages.len();
@@ -1775,15 +2069,7 @@ impl<'a> App<'a> {
                                 self.ui.renderer.write_line(&format!("> {}", sanitize_output(line)), crossterm::style::Color::Green)?;
                             }
                             self.ui.renderer.write_line("", crossterm::style::Color::White)?;
-                            start_main_run(
-                                &next, &mut self.agent, &self.client, self.session, self.cli, self.cfg, self.context,
-                                &self.permission, &self.ask_tx, &self.sandbox, self.ui.reasoning_enabled,
-                                &mut self.agent_run.agent_rx, &mut self.agent_run.main_abort, &mut self.agent_run.is_running,
-                                &self.status_signals,
-                                #[cfg(feature = "mcp")] &mut self.mcp_manager,
-                                &mut self.prebuild_rx,
-                                &mut self.agent_run.pending_send,
-                            ).await;
+                            self.start_main_run(&next).await;
                         }
                     }
                     self.refresh()?;
@@ -2029,29 +2315,12 @@ impl<'a> App<'a> {
                             let main_path = info.main_repo_path.display().to_string();
                             let wt_path = info.worktree_path.display().to_string();
                             let force_flag = self.cli.resolve_wt_force(self.cfg);
-                            spawn_merge_agent(
+                            self.spawn_merge_agent(
                                 &info.branch,
                                 &target,
                                 &main_path,
                                 &wt_path,
                                 force_flag,
-                                self.session,
-                                &mut self.agent,
-                                &self.client,
-                                self.cli,
-                                self.cfg,
-                                self.context,
-                                &self.permission,
-                                &self.ask_tx,
-                                &self.sandbox,
-                                self.ui.reasoning_enabled,
-                                &mut self.agent_run.agent_rx,
-                                &mut self.agent_run.main_abort,
-                                &mut self.agent_run.is_running,
-                                &self.status_signals,
-                                &mut self.wt_return_path,
-                                #[cfg(feature = "mcp")]
-                                &mut self.mcp_manager,
                             )
                             .await;
 
