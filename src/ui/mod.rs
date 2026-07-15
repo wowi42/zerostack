@@ -29,6 +29,7 @@ use crate::event::{AgentEvent, UserEvent};
 #[cfg(feature = "mcp")]
 use crate::extras::mcp::McpClientManager;
 use crate::extras::status_signals::StatusSignals;
+#[cfg(feature = "git-worktree")]
 use crate::permission;
 use crate::permission::ask::{AskReceiver, AskSender};
 use crate::permission::checker::PermCheck;
@@ -42,6 +43,7 @@ use crate::ui::input::InputEditor;
 use crate::ui::renderer::Renderer;
 use crate::ui::slash::handle_compress;
 
+#[cfg(feature = "git-worktree")]
 pub(crate) fn apply_current_prompt_mode(
     context: &mut ContextFiles,
     permission: &Option<PermCheck>,

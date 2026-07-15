@@ -1089,6 +1089,7 @@ fn print_config(cli: &cli::Cli, cfg: &config::Config) {
         }
     };
 
+    #[cfg_attr(not(feature = "subagents"), allow(unused_mut))]
     let mut limit_entries: Vec<(&str, String)> = vec![
         ("max-tokens", max_tokens.to_string()),
         ("max-agent-turns", max_agent_turns.to_string()),

@@ -39,10 +39,12 @@ use super::handle_human_handoff;
 #[cfg(feature = "git-worktree")]
 use super::spawn_merge_agent;
 use super::{
-    C_AGENT, C_BTW, C_ERROR, C_PERM, C_TOOL, PrebuildPayload, apply_current_prompt_mode,
-    classify_submission, mid_turn_compact_and_respawn, refresh_display, spawn_event_thread,
-    start_main_run, stop_turn_context_exhausted,
+    C_AGENT, C_BTW, C_ERROR, C_TOOL, PrebuildPayload, classify_submission,
+    mid_turn_compact_and_respawn, refresh_display, spawn_event_thread, start_main_run,
+    stop_turn_context_exhausted,
 };
+#[cfg(feature = "git-worktree")]
+use super::{C_PERM, apply_current_prompt_mode};
 
 const TURN_TRACE_MAX: usize = 64;
 
