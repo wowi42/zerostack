@@ -51,7 +51,7 @@ Enum selecting which file to write to:
 
 ### `WriteMode`
 
-- `Append` — append content, inserting a `\n` separator if the file does not end with one
+- `Append` — append content, inserting a `\n` separator if the file does not end with one. For `long_term` only, appended lines are deduplicated (see [Long-term append deduplication](#long-term-append-deduplication))
 - `Overwrite` — replace the entire file
 
 ### `Mem`
@@ -120,7 +120,7 @@ Rules:
 
 ## Rig Tools
 
-Three tools are registered when the `memory` feature is enabled:
+Four tools are registered when the `memory` feature is enabled:
 
 ### `memory_write`
 
@@ -140,11 +140,63 @@ Three tools are registered when the `memory` feature is enabled:
 
 `source=list` enumerates all `.md` files in the store (global MEMORY.md + current project's notes + daily logs).
 
+### `memory_edit`
+
+| Parameter | Type | Description |
+|---|---|---|
+| `target` | string | `long_term`, `scratchpad`, `daily`, or `note` |
+| `name` | string (opt) | Note stem (required for `note`); or a `YYYY-MM-DD` date for `daily` to edit an earlier day (defaults to today) |
+| `old_str` | string (opt) | Substring to replace; must occur exactly once. Omit to delete a whole note |
+| `new_str` | string | Replacement text; empty string deletes the matched substring |
+
+Replaces a unique substring in a memory file in place. `old_str` is matched literally (no fuzzy matching) and must occur exactly once in the target file; zero or multiple matches fail without writing. `new_str` replaces the match verbatim with no newline cleanup, so an empty `new_str` deletes exactly the matched text, and including the trailing newline in `old_str` deletes a whole line.
+
+Omitting `old_str` deletes an entire note file (`notes/<name>.md`) from disk; this requires `target=note` with a `name`. Omitting `old_str` for `long_term`, `scratchpad`, or `daily` is rejected and changes nothing. Deleting a note that does not exist is an error.
+
+---
+
+## Backups
+
+Content-destroying mutations first copy the current file to a sibling `.bak` (single version, `MEMORY.md` becomes `MEMORY.bak`), so the pre-mutation content stays recoverable. There is exactly one `.bak` per file: each qualifying mutation overwrites the previous `.bak` rather than keeping a history. The `.bak` extension keeps these files out of `memory_read source=list` and `memory_search`, which both filter to `.md` only, so backups never leak into the model's context.
+
+A backup is taken only before these operations (and only when the target file already exists: a first-ever overwrite of a not-yet-created file has nothing to back up and skips silently):
+
+| Operation | `long_term` | `scratchpad` | `daily` | `note` |
+|---|---|---|---|---|
+| `memory_write` overwrite | Backs up | Backs up | No | No |
+| `memory_edit` content-replace (`old_str` given) | Backs up | Backs up | No | No |
+| `memory_edit` whole-note deletion (`old_str` omitted) | n/a | n/a | n/a | Backs up |
+| any append | No | No | No | No |
+
+Appends are non-destructive by construction, so they never back up. `daily` and `note` content edits are targeted unique-match replacements (low-risk and already reversible via a re-edit), so they are deliberately left un-backed-up to avoid churn.
+
+If the backup copy itself fails (for example the `.bak` path is not writable), the mutation still proceeds (the primary operation is what was asked for), but the tool response is suffixed with a `warning: backup failed, no .bak written` note so the caller knows there is no undo for that change. The failure is also logged.
+
 ### `memory_search`
 
 | Parameter | Type | Description |
 |---|---|---|
 | `query` | string | Space-separated keywords, searched case-insensitively |
+
+---
+
+## Long-term append deduplication
+
+`MEMORY.md` is curated one fact per line, so `memory_write target=long_term mode=append` deduplicates its lines. This applies to `long_term` appends **only**: `scratchpad`, `daily`, and `note` appends are never deduplicated (repeats are preserved), and no target dedups on `overwrite`.
+
+Comparison is whitespace-insensitive: each line is normalized by trimming and collapsing every run of Unicode whitespace (ASCII spaces/tabs and the full-width `U+3000` space) to a single ASCII space, preserving case. Two lines that differ only in whitespace width are duplicates.
+
+For a `long_term` append batch (the incoming content split on `\n`):
+
+1. Batch-internal duplicates are dropped, keeping the first occurrence.
+2. Lines whose normalized form already exists anywhere in `MEMORY.md` are dropped.
+3. Blank / whitespace-only lines normalize to empty; they are never a dedup key (they carry no fact) and are kept verbatim.
+4. If nothing meaningful survives, the write is skipped entirely and the file is left byte-for-byte unchanged.
+
+The response message reflects the outcome:
+- No duplicates: `Wrote N bytes to <path>` (unchanged).
+- Partial dedup: `Wrote N bytes to <path> (skipped M duplicate line(s))`.
+- Whole batch dropped: `Nothing written to <path>: all M line(s) were duplicates`.
 
 ---
 
