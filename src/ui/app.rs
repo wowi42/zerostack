@@ -73,7 +73,7 @@ pub(crate) struct App<'a> {
     pending_inputs: VecDeque<String>,
     agent_line_started: bool,
     response_buf: String,
-    response_start_line: Option<usize>,
+    response_start_block: Option<usize>,
     show_reasoning: bool,
     reasoning_enabled: bool,
     pending_send: Option<String>,
@@ -187,7 +187,7 @@ impl<'a> App<'a> {
         let pending_inputs: VecDeque<String> = VecDeque::new();
         let agent_line_started = false;
         let response_buf = String::new();
-        let response_start_line: Option<usize> = None;
+        let response_start_block: Option<usize> = None;
         let show_reasoning = cfg.resolve_show_reasoning();
         let reasoning_enabled = true;
         session.reasoning_enabled = reasoning_enabled;
@@ -456,7 +456,7 @@ impl<'a> App<'a> {
             pending_inputs,
             agent_line_started,
             response_buf,
-            response_start_line,
+            response_start_block,
             show_reasoning,
             reasoning_enabled,
             pending_send,
@@ -627,7 +627,7 @@ impl<'a> App<'a> {
                 } else if row < self.renderer.visible_lines() as u16 {
                     if let Some(idx) = self.renderer.buffer_line_at_row(row) {
                         if let Some(url) = self.renderer.link_url_at(idx, col) {
-                            renderer_mod::open_url(url);
+                            renderer_mod::open_url(&url);
                         } else {
                             self.renderer.selection_active = true;
                             self.renderer.selection_start = Some(idx);
@@ -1006,7 +1006,7 @@ impl<'a> App<'a> {
             &mut self.agent_rx,
             &mut self.agent_line_started,
             &mut self.response_buf,
-            &mut self.response_start_line,
+            &mut self.response_start_block,
             &mut self.was_reasoning,
             self.show_reasoning,
             &mut self.agent,
@@ -1949,7 +1949,7 @@ impl<'a> App<'a> {
             &self.status_signals,
             &mut self.turn_trace,
             &mut self.response_buf,
-            &mut self.response_start_line,
+            &mut self.response_start_block,
             &mut self.agent_line_started,
             &mut self.was_reasoning,
             #[cfg(feature = "mcp")]
@@ -1971,7 +1971,7 @@ impl<'a> App<'a> {
             &self.status_signals,
             &mut self.turn_trace,
             &mut self.response_buf,
-            &mut self.response_start_line,
+            &mut self.response_start_block,
             &mut self.agent_line_started,
             &mut self.was_reasoning,
         )
@@ -2359,7 +2359,7 @@ impl<'a> App<'a> {
 
                         let mut agent_line_started = false;
                         let mut merge_response_buf = String::new();
-                        let mut merge_response_start_line = None;
+                        let mut merge_response_start_block = None;
                         let mut merge_was_reasoning = false;
                         while self.is_running {
                             let ev = match self.agent_rx.as_mut() {
@@ -2421,7 +2421,7 @@ impl<'a> App<'a> {
                                     &mut self.agent_rx,
                                     &mut agent_line_started,
                                     &mut merge_response_buf,
-                                    &mut merge_response_start_line,
+                                    &mut merge_response_start_block,
                                     &mut merge_was_reasoning,
                                     self.show_reasoning,
                                     &mut self.agent,
