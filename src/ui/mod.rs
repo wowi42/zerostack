@@ -1,6 +1,7 @@
 mod app;
 mod event_handler;
 pub(crate) mod events;
+pub(crate) mod feed;
 pub(crate) mod input;
 pub(crate) mod markdown;
 mod permission_handler;
@@ -525,7 +526,7 @@ pub(crate) async fn mid_turn_compact_and_respawn(
     status_signals: &Option<StatusSignals>,
     turn_trace: &mut Vec<compact_str::CompactString>,
     response_buf: &mut String,
-    response_start_line: &mut Option<usize>,
+    response_start_block: &mut Option<usize>,
     agent_line_started: &mut bool,
     was_reasoning: &mut bool,
     #[cfg(feature = "mcp")] mcp_manager: &mut Option<McpClientManager>,
@@ -558,7 +559,7 @@ pub(crate) async fn mid_turn_compact_and_respawn(
     }
     turn_trace.clear();
     response_buf.clear();
-    *response_start_line = None;
+    *response_start_block = None;
     *agent_line_started = false;
 
     // Unlike the between-turn gate, this announces unconditionally: the relief
@@ -659,7 +660,7 @@ pub(crate) fn stop_turn_context_exhausted(
     status_signals: &Option<StatusSignals>,
     turn_trace: &mut Vec<compact_str::CompactString>,
     response_buf: &mut String,
-    response_start_line: &mut Option<usize>,
+    response_start_block: &mut Option<usize>,
     agent_line_started: &mut bool,
     was_reasoning: &mut bool,
 ) -> anyhow::Result<()> {
@@ -672,7 +673,7 @@ pub(crate) fn stop_turn_context_exhausted(
     *agent_line_started = false;
     turn_trace.clear();
     response_buf.clear();
-    *response_start_line = None;
+    *response_start_block = None;
     if let Some(ss) = status_signals.as_ref() {
         ss.send_stop();
     }
