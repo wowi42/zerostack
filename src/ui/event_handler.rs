@@ -21,9 +21,11 @@ use crate::ui::feed::BlockStyle;
 use crate::ui::renderer::Renderer;
 use crate::ui::slash::handle_compress;
 
+#[cfg(any(feature = "git-worktree", feature = "loop"))]
+use super::C_AGENT;
 #[cfg(feature = "git-worktree")]
 use super::apply_current_prompt_mode;
-use super::{C_AGENT, C_ERROR, C_TOOL};
+use super::{C_ERROR, C_TOOL};
 
 #[cfg(feature = "mcp")]
 #[allow(clippy::too_many_arguments)]
