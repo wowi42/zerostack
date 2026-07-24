@@ -715,8 +715,11 @@ where
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    eprintln!("Error: {}", e);
-                    break;
+                    // Propagate the stream failure instead of returning `Ok`
+                    // with a truncated/empty response: dispatch must exit
+                    // non-zero and must never persist an empty assistant turn
+                    // (which would then be replayed as history on `--continue`).
+                    return Err(anyhow::anyhow!("{e}"));
                 }
             }
         }
@@ -726,7 +729,10 @@ where
             let injected_prompt = next_instruction
                 .take()
                 .unwrap_or_else(|| prompt.to_string());
-            full_response.clear();
+            // Keep the text already streamed to stdout this turn: the caller
+            // persists the returned string as the assistant message, so
+            // clearing it here would drop turn-1 output the user already saw
+            // and desync the saved transcript from the terminal.
             stream = continue_prompt_injector(
                 agent,
                 &injected_prompt,
