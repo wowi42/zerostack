@@ -25,21 +25,25 @@ fn ask_yn(question: &str) -> bool {
     matches!(input.trim().to_lowercase().as_str(), "y" | "yes")
 }
 
-fn exit_tui_for_io() {
+fn exit_tui_for_io(alternate_screen: bool) {
     let _ = crossterm::terminal::disable_raw_mode();
     let mut stdout = std::io::stdout();
-    let _ = stdout.execute(crossterm::event::DisableMouseCapture);
-    let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
+    if alternate_screen {
+        let _ = stdout.execute(crossterm::event::DisableMouseCapture);
+        let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
+    }
     let _ = stdout.flush();
 }
 
 fn restore_tui_and_render(ctx: &mut SlashCtx<'_>) -> anyhow::Result<()> {
     let mut stdout = std::io::stdout();
-    let _ = stdout.execute(crossterm::terminal::EnterAlternateScreen);
-    let _ = stdout.execute(crossterm::terminal::Clear(
-        crossterm::terminal::ClearType::All,
-    ));
-    let _ = stdout.execute(crossterm::event::EnableMouseCapture);
+    if ctx.cfg.resolve_alternate_screen() {
+        let _ = stdout.execute(crossterm::terminal::EnterAlternateScreen);
+        let _ = stdout.execute(crossterm::terminal::Clear(
+            crossterm::terminal::ClearType::All,
+        ));
+        let _ = stdout.execute(crossterm::event::EnableMouseCapture);
+    }
     let _ = crossterm::terminal::enable_raw_mode();
     crate::ui::events::render_session(ctx.renderer, ctx.session, ctx.cli, ctx.cfg, ctx.context)
 }
@@ -75,7 +79,7 @@ pub async fn handle(parts: &[&str], ctx: &mut SlashCtx<'_>) -> anyhow::Result<()
         }
         (true, true)
     } else {
-        exit_tui_for_io();
+        exit_tui_for_io(ctx.cfg.resolve_alternate_screen());
 
         let create_a = ask_yn(&build_question(
             "AGENTS.md",

@@ -72,6 +72,7 @@ pub(crate) struct App<'a> {
     event_handle: Option<std::thread::JoinHandle<()>>,
     prebuild_rx: Option<mpsc::Receiver<PrebuildPayload>>,
     _terminal_guard: Option<TerminalGuard>,
+    alternate_screen: bool,
 }
 
 impl<'a> App<'a> {
@@ -127,9 +128,10 @@ impl<'a> App<'a> {
         headless_backend: Option<Box<dyn renderer_mod::RenderBackend>>,
     ) -> anyhow::Result<Self> {
         let headless = headless_backend.is_some();
+        let alternate_screen = headless || ui.cfg.resolve_alternate_screen();
         let _terminal_guard = match headless {
             true => None,
-            false => Some(TerminalGuard::new()?),
+            false => Some(TerminalGuard::new(alternate_screen)?),
         };
 
         ui.session.show_cost_always = ui.cfg.resolve_show_cost_always();
@@ -148,6 +150,11 @@ impl<'a> App<'a> {
         renderer.set_statusline_height(crate::ui::statusline::line_count());
         renderer.set_monochrome(ui.cli.no_color);
         renderer.set_chat_margin(ui.cfg.resolve_chat_left_margin());
+        if alternate_screen {
+            renderer.set_mode(crate::ui::renderer::RenderMode::AlternateScreen);
+        } else {
+            renderer.set_mode(crate::ui::renderer::RenderMode::MainScreen);
+        }
         if let Some(ref theme_name) = ui.context.current_theme_name {
             if let Some(content) = ui.context.themes.get(theme_name.as_str()) {
                 crate::context::themes::apply(content, &mut renderer);
@@ -174,6 +181,7 @@ impl<'a> App<'a> {
 
         let mut input = InputEditor::new();
         input.set_monochrome(ui.cli.no_color);
+        input.set_alternate_screen(alternate_screen);
         input.set_prompt_names(ui.context.prompts.keys().cloned().collect());
         input.set_theme_names(ui.context.themes.keys().cloned().collect());
         if let Some(editor) = &ui.cfg.editor {
@@ -431,6 +439,7 @@ impl<'a> App<'a> {
             event_handle,
             prebuild_rx,
             _terminal_guard,
+            alternate_screen,
         })
     }
 
@@ -595,19 +604,23 @@ impl<'a> App<'a> {
                 self.renderer.resize();
             }
             UserEvent::ScrollUp => {
-                if !self.renderer.input_scroll_up() {
+                if self.alternate_screen && !self.renderer.input_scroll_up() {
                     self.renderer.scroll_line_up();
                 }
             }
             UserEvent::ScrollDown => {
-                if self.renderer.is_scrolling() {
+                if !self.alternate_screen {
+                    // In main-screen mode the terminal owns scrolling.
+                } else if self.renderer.is_scrolling() {
                     self.renderer.scroll_line_down();
                 } else {
                     self.renderer.input_scroll_down();
                 }
             }
             UserEvent::MouseDown { row, col } => {
-                if let Some(pos) =
+                if !self.alternate_screen {
+                    // Main-screen mode leaves mouse selection to the terminal.
+                } else if let Some(pos) =
                     self.renderer
                         .input_cursor_for_click(row, col, &self.input.buffer)
                 {
@@ -628,14 +641,15 @@ impl<'a> App<'a> {
                 }
             }
             UserEvent::MouseDrag { row, col: _ } => {
-                if self.renderer.selection_active
+                if self.alternate_screen
+                    && self.renderer.selection_active
                     && let Some(idx) = self.renderer.buffer_line_at_row(row)
                 {
                     self.renderer.selection_end = Some(idx);
                 }
             }
             UserEvent::MouseUp { row, col: _ } => {
-                if self.renderer.selection_active {
+                if self.alternate_screen && self.renderer.selection_active {
                     if let Some(idx) = self.renderer.buffer_line_at_row(row) {
                         self.renderer.selection_end = Some(idx);
                     }
@@ -732,19 +746,27 @@ impl<'a> App<'a> {
 
         match key.code {
             KeyCode::PageUp => {
-                self.renderer.scroll_page_up();
+                if self.alternate_screen {
+                    self.renderer.scroll_page_up();
+                }
                 return Ok(());
             }
             KeyCode::PageDown => {
-                self.renderer.scroll_page_down();
+                if self.alternate_screen {
+                    self.renderer.scroll_page_down();
+                }
                 return Ok(());
             }
             KeyCode::Home => {
-                self.renderer.scroll_to_top();
+                if self.alternate_screen {
+                    self.renderer.scroll_to_top();
+                }
                 return Ok(());
             }
             KeyCode::End => {
-                self.renderer.scroll_to_bottom()?;
+                if self.alternate_screen {
+                    self.renderer.scroll_to_bottom()?;
+                }
                 return Ok(());
             }
             _ => {}
@@ -1658,8 +1680,10 @@ impl<'a> App<'a> {
                     .unwrap_or_else(|| "editor".to_string());
                 let _ = crossterm::terminal::disable_raw_mode();
                 let mut stdout = std::io::stdout();
-                let _ = stdout.execute(crossterm::event::DisableMouseCapture);
-                let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
+                if self.alternate_screen {
+                    let _ = stdout.execute(crossterm::event::DisableMouseCapture);
+                    let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
+                }
                 let _ = stdout.flush();
                 let _ = std::process::Command::new("sh")
                     .arg("-c")
@@ -1667,11 +1691,13 @@ impl<'a> App<'a> {
                     .arg("sh")
                     .arg(&path)
                     .status();
-                let _ = stdout.execute(crossterm::terminal::EnterAlternateScreen);
-                let _ = stdout.execute(crossterm::terminal::Clear(
-                    crossterm::terminal::ClearType::All,
-                ));
-                let _ = stdout.execute(crossterm::event::EnableMouseCapture);
+                if self.alternate_screen {
+                    let _ = stdout.execute(crossterm::terminal::EnterAlternateScreen);
+                    let _ = stdout.execute(crossterm::terminal::Clear(
+                        crossterm::terminal::ClearType::All,
+                    ));
+                    let _ = stdout.execute(crossterm::event::EnableMouseCapture);
+                }
                 let _ = crossterm::terminal::enable_raw_mode();
                 render_session(
                     &mut self.renderer,
@@ -1967,15 +1993,19 @@ impl<'a> App<'a> {
         }
         let _ = crossterm::terminal::disable_raw_mode();
         let mut stdout = std::io::stdout();
-        let _ = stdout.execute(crossterm::event::DisableMouseCapture);
-        let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
+        if self.alternate_screen {
+            let _ = stdout.execute(crossterm::event::DisableMouseCapture);
+            let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
+        }
         let _ = stdout.flush();
         let _ = std::process::Command::new("lazygit").status();
-        let _ = stdout.execute(crossterm::terminal::EnterAlternateScreen);
-        let _ = stdout.execute(crossterm::terminal::Clear(
-            crossterm::terminal::ClearType::All,
-        ));
-        let _ = stdout.execute(crossterm::event::EnableMouseCapture);
+        if self.alternate_screen {
+            let _ = stdout.execute(crossterm::terminal::EnterAlternateScreen);
+            let _ = stdout.execute(crossterm::terminal::Clear(
+                crossterm::terminal::ClearType::All,
+            ));
+            let _ = stdout.execute(crossterm::event::EnableMouseCapture);
+        }
         let _ = crossterm::terminal::enable_raw_mode();
         self.rebind_event_thread();
         Ok(())

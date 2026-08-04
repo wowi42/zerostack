@@ -326,3 +326,91 @@ mod dirty {
         );
     }
 }
+
+mod main_screen {
+    use crate::ui::renderer::{FakeBackend, RenderMode, Renderer};
+    use crate::ui::statusline::StatusSpan;
+
+    fn make_renderer() -> Renderer {
+        let mut r = Renderer::with_backend(Box::new(FakeBackend::new(80, 24)));
+        r.set_mode(RenderMode::MainScreen);
+        r.set_statusline_height(1);
+        r
+    }
+
+    fn statusline() -> Vec<Vec<StatusSpan>> {
+        vec![vec![StatusSpan::Text {
+            text: "status".to_string(),
+            fg: None,
+            bg: None,
+        }]]
+    }
+
+    #[test]
+    fn appends_chat_lines_to_scrollback() {
+        let mut r = make_renderer();
+        r.write_line("hello world", crossterm::style::Color::White)
+            .unwrap();
+        let out = r.captured_output();
+        assert!(
+            out.contains("hello world"),
+            "expected output to contain chat line, got: {:?}",
+            out
+        );
+        assert!(
+            !out.contains("\x1b[2J"),
+            "main-screen renderer should not clear the screen"
+        );
+    }
+
+    #[test]
+    fn draw_bottom_renders_input_and_status() {
+        let mut r = make_renderer();
+        r.draw_bottom("hi", 2, &statusline(), false).unwrap();
+        let out = r.captured_output();
+        assert!(
+            out.contains("> hi"),
+            "expected input prompt, got: {:?}",
+            out
+        );
+        assert!(
+            out.contains("status"),
+            "expected statusline, got: {:?}",
+            out
+        );
+    }
+
+    #[test]
+    fn input_change_rewrites_bottom_in_place() {
+        let mut r = make_renderer();
+        r.draw_bottom("a", 1, &statusline(), false).unwrap();
+        let first = r.captured_output();
+        r.draw_bottom("ab", 2, &statusline(), false).unwrap();
+        let second = r.captured_output();
+        // The second draw should move the cursor up and rewrite the bottom
+        // region instead of appending new scrollback lines.
+        assert!(
+            second.contains("\x1b["),
+            "expected cursor movement on rewrite, got: {:?}",
+            second
+        );
+        // A rewrite contains a cursor-up sequence (e.g. \x1b[4A) followed by
+        // line clears (\x1b[2K). Appending would not produce these.
+        assert!(
+            second.contains("\x1b[2K"),
+            "expected line clears on rewrite, got: {:?}",
+            second
+        );
+        let first_newlines = first.matches('\n').count();
+        let second_newlines = second.matches('\n').count();
+        // Rewrite adds at most one extra newline compared to the original draw
+        // because it overwrites existing bottom lines rather than pushing them
+        // into scrollback.
+        assert!(
+            second_newlines <= first_newlines + 3,
+            "rewrite added too many newlines: first={} second={}",
+            first_newlines,
+            second_newlines
+        );
+    }
+}

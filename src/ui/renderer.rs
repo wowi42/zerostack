@@ -16,6 +16,20 @@ use super::markdown::word_wrap;
 use super::statusline::StatusSpan;
 use super::utils::{char_display_width, display_width, resolve_color};
 
+/// Rendering mode: alternate screen keeps a fixed fullscreen UI; main screen
+/// renders into the terminal's normal scrollback so native scroll/selection work.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RenderMode {
+    AlternateScreen,
+    MainScreen,
+}
+
+impl Default for RenderMode {
+    fn default() -> Self {
+        RenderMode::AlternateScreen
+    }
+}
+
 /// Terminal output sink for [`Renderer`]: every ANSI write and terminal-size
 /// read goes through this trait. Production uses [`CrosstermBackend`] (stdout
 /// plus the real terminal size); tests swap in [`FakeBackend`] to capture the
@@ -232,9 +246,22 @@ pub struct Renderer {
     last_chat_snapshot: Option<ChatSnapshot>,
     bottom_dirty: bool,
     last_bottom_snapshot: Option<BottomSnapshot>,
+    /// When true, skip dirty-region optimization and clear/redraw the whole
+    /// screen every frame. Used when running in the main terminal buffer
+    /// instead of the alternate screen.
+    full_redraw: bool,
     /// Screen position of the input caret after the last full bottom draw;
     /// `None` when the caret is hidden (permission/chain prompts).
     bottom_cursor: Option<(u16, u16)>,
+    /// Current rendering mode.
+    mode: RenderMode,
+    // --- Main-screen state ---
+    /// Chat content lines already emitted to the terminal scrollback.
+    main_content_lines: Vec<String>,
+    /// Last set of lines rendered for the bottom region (input + statusline).
+    main_bottom_lines: Vec<String>,
+    /// Whether new content has been emitted since the last bottom draw.
+    main_content_changed: bool,
 }
 
 impl Renderer {
@@ -280,6 +307,19 @@ impl Renderer {
             bottom_dirty: true,
             last_bottom_snapshot: None,
             bottom_cursor: None,
+            full_redraw: false,
+            mode: RenderMode::AlternateScreen,
+            main_content_lines: Vec::new(),
+            main_bottom_lines: Vec::new(),
+            main_content_changed: false,
+        }
+    }
+
+    /// Set the rendering mode. Must be called before the first frame.
+    pub fn set_mode(&mut self, mode: RenderMode) {
+        self.mode = mode;
+        if mode == RenderMode::MainScreen {
+            self.full_redraw = false;
         }
     }
 
@@ -397,7 +437,7 @@ impl Renderer {
     /// recorded draw. The state comparison also catches feed mutations made
     /// through `feed_mut()` and direct writes to the public selection fields.
     pub fn chat_needs_redraw(&self) -> bool {
-        if self.chat_dirty {
+        if self.chat_dirty || self.full_redraw {
             return true;
         }
         match &self.last_chat_snapshot {
@@ -692,8 +732,14 @@ impl Renderer {
     }
 
     pub fn render_viewport(&mut self) -> io::Result<()> {
+        if self.mode == RenderMode::MainScreen {
+            return self.render_viewport_main();
+        }
         if !self.chat_needs_redraw() {
             return Ok(());
+        }
+        if self.full_redraw {
+            self.exec(Clear(ClearType::All))?;
         }
         let (cols, _rows) = self.terminal_size();
         let max_width = cols.saturating_sub(1 + self.chat_margin) as usize;
@@ -805,6 +851,13 @@ impl Renderer {
     }
 
     pub fn write_line(&mut self, text: &str, color: Color) -> io::Result<()> {
+        if self.mode == RenderMode::MainScreen {
+            self.commit_partial();
+            let style = style_from_color(color);
+            self.feed.push_block(style, text);
+            self.chat_dirty = true;
+            return self.render_viewport_main();
+        }
         self.commit_partial();
         let style = style_from_color(color);
         self.feed.push_block(style, text);
@@ -836,6 +889,9 @@ impl Renderer {
             }
         }
         self.chat_dirty = true;
+        if self.mode == RenderMode::MainScreen {
+            return self.render_viewport_main();
+        }
         if self.scroll_offset == 0 {
             self.render_viewport()?;
         }
@@ -843,6 +899,22 @@ impl Renderer {
     }
 
     pub fn clear_content(&mut self) -> io::Result<()> {
+        if self.mode == RenderMode::MainScreen {
+            self.chat_dirty = true;
+            self.feed.clear();
+            self.partial.clear();
+            self.scroll_offset = 0;
+            self.clear_selection();
+            self.main_content_lines.clear();
+            self.main_bottom_lines.clear();
+            self.main_content_changed = false;
+            // Print a visible separator so the user sees the boundary.
+            let cols = self.terminal_size().0;
+            let sep: String = "─".repeat(cols as usize);
+            write!(self.backend, "\n{}", sep)?;
+            self.backend.flush()?;
+            return Ok(());
+        }
         self.chat_dirty = true;
         self.feed.clear();
         self.partial.clear();
@@ -1119,13 +1191,16 @@ impl Renderer {
         statusline: &[Vec<StatusSpan>],
         is_running: bool,
     ) -> io::Result<()> {
+        if self.mode == RenderMode::MainScreen {
+            return self.draw_bottom_main(input_line, cursor_pos, statusline, is_running);
+        }
         let (cols, rows) = self.backend.size()?;
         let snapshot =
             self.bottom_snapshot(input_line, cursor_pos, statusline, is_running, cols, rows);
         match Self::bottom_redraw_plan(
             self.last_bottom_snapshot.as_ref(),
             &snapshot,
-            self.bottom_dirty,
+            self.bottom_dirty || self.full_redraw,
         ) {
             BottomRedrawPlan::Skip => return Ok(()),
             BottomRedrawPlan::StatuslineOnly => {
@@ -1415,6 +1490,321 @@ impl Renderer {
         drawn.input_vscroll_offset = self.input_vscroll_offset;
         self.record_bottom_drawn(drawn);
         Ok(())
+    }
+
+    // ------------------------------------------------------------------
+    // Main-screen rendering path
+    // ------------------------------------------------------------------
+
+    /// Render chat content in main-screen mode: only new lines are appended to
+    /// the terminal scrollback. Old lines are never rewritten.
+    fn render_viewport_main(&mut self) -> io::Result<()> {
+        if !self.chat_dirty && !self.main_content_lines.is_empty() {
+            return Ok(());
+        }
+        let width = self.max_line_width();
+        let new_lines: Vec<String> = self
+            .chat_lines(width)
+            .iter()
+            .map(|entry| self.format_line_entry(entry))
+            .collect();
+
+        if new_lines.is_empty() && self.main_content_lines.is_empty() {
+            return Ok(());
+        }
+
+        // Find common prefix with previously emitted content.
+        let mut common = self
+            .main_content_lines
+            .iter()
+            .zip(new_lines.iter())
+            .take_while(|(a, b)| a == b)
+            .count();
+
+        // Content shrunk (e.g. clear). We cannot delete scrollback lines, so
+        // print a separator and start fresh from here.
+        if new_lines.len() < self.main_content_lines.len() {
+            let cols = self.terminal_size().0;
+            let sep: String = "─".repeat(cols as usize);
+            write!(self.backend, "\n{}", sep)?;
+            self.main_content_lines.clear();
+            common = 0;
+        }
+
+        // Append new lines.
+        let prefix_len = self.main_content_lines.len();
+        for (i, line) in new_lines.iter().enumerate().skip(common) {
+            if i > prefix_len {
+                // We're emitting lines after the previously known content but
+                // before the previous bottom region. Insert a newline to push
+                // the old bottom down; it will be overwritten by draw_bottom.
+                write!(self.backend, "\n")?;
+            } else if !self.main_content_lines.is_empty() || i > 0 {
+                write!(self.backend, "\n")?;
+            }
+            write!(self.backend, "{}", line)?;
+        }
+
+        self.main_content_lines = new_lines;
+        self.main_content_changed = true;
+        self.chat_dirty = false;
+        self.record_chat_drawn();
+        self.backend.flush()
+    }
+
+    /// Format a single chat line with foreground color and optional chat background.
+    fn format_line_entry(&self, entry: &LineEntry) -> String {
+        let mut out = String::new();
+        if let Some(bg) = self.chat_bg {
+            let bg = self.color(bg);
+            out.push_str(&format!("{}\u{1b}[{}K", SetBackgroundColor(bg), 0));
+        }
+        if self.chat_margin > 0 {
+            out.push_str(&" ".repeat(self.chat_margin as usize));
+        }
+        let fg = self.color(entry.color);
+        out.push_str(&format!("{}", SetForegroundColor(fg)));
+        out.push_str(&wrap_urls_osc8(&entry.text));
+        out.push_str(&format!("{}", ResetColor));
+        out
+    }
+
+    /// Render the input area and statusline as ordinary lines at the bottom of
+    /// the flow. When only the bottom region changed, rewrite it in place.
+    fn draw_bottom_main(
+        &mut self,
+        input_line: &str,
+        cursor_pos: usize,
+        statusline: &[Vec<StatusSpan>],
+        is_running: bool,
+    ) -> io::Result<()> {
+        let (cols, _rows) = self.backend.size()?;
+        let new_bottom =
+            self.format_bottom_lines(input_line, cursor_pos, statusline, is_running, cols);
+
+        if !self.main_content_changed && !self.main_bottom_lines.is_empty() {
+            // Rewrite the bottom region in place.
+            let old_count = self.main_bottom_lines.len();
+            write!(self.backend, "\x1b[{}A", old_count)?;
+            for (i, line) in new_bottom.iter().enumerate() {
+                if i > 0 {
+                    write!(self.backend, "\n")?;
+                }
+                write!(self.backend, "\r\x1b[2K{}", line)?;
+            }
+        } else {
+            // Content changed: print bottom below the new content.
+            for (i, line) in new_bottom.iter().enumerate() {
+                if !self.main_content_lines.is_empty()
+                    || i > 0
+                    || !self.main_bottom_lines.is_empty()
+                {
+                    write!(self.backend, "\n")?;
+                }
+                write!(self.backend, "{}", line)?;
+            }
+        }
+
+        // Position hardware cursor inside the input line.
+        if let Some((cursor_row_offset, cursor_col)) =
+            self.main_input_cursor_pos(input_line, cursor_pos, &new_bottom)
+        {
+            let up = new_bottom.len().saturating_sub(cursor_row_offset + 1);
+            if up > 0 {
+                write!(self.backend, "\x1b[{}A", up)?;
+            }
+            write!(self.backend, "\r\x1b[{}G", cursor_col + 1)?;
+        }
+
+        self.main_bottom_lines = new_bottom;
+        self.main_content_changed = false;
+        self.bottom_dirty = false;
+        self.backend.flush()
+    }
+
+    /// Build the bottom lines (input + statusline) as strings for main-screen mode.
+    fn format_bottom_lines(
+        &self,
+        input_line: &str,
+        cursor_pos: usize,
+        statusline: &[Vec<StatusSpan>],
+        is_running: bool,
+        cols: u16,
+    ) -> Vec<String> {
+        let _ = cursor_pos;
+        let mut lines = Vec::new();
+        const SPINNER: &[&str] = &["⠋ ", "⠙ ", "⠹ ", "⠸ ", "⠼ ", "⠴ ", "⠦ ", "⠧ ", "⠇ ", "⠏ "];
+
+        // Separator above input.
+        let sep: String = "─".repeat(cols as usize);
+        lines.push(format!(
+            "{}{}",
+            SetForegroundColor(self.color(Color::DarkGrey)),
+            sep
+        ));
+
+        if let Some(ref pp) = self.permission_prompt {
+            let color = SetForegroundColor(self.color(Color::DarkYellow));
+            lines.push(format!("{}{}", color, pp.tool));
+            lines.push(format!("{}{}", color, pp.options));
+        } else if let Some(ref cp) = self.chain_prompt {
+            let options = if self.chain_but_mode {
+                "[Enter] send  [Esc] cancel"
+            } else {
+                "[Y] Yes  [N] No  [B] yes, But (add instruction)"
+            };
+            let color = SetForegroundColor(self.color(Color::DarkYellow));
+            lines.push(format!("{}{}", color, cp.question));
+            lines.push(format!("{}{}", color, options));
+        } else {
+            let prompt = if is_running {
+                let frame = self.spinner_frame as usize % SPINNER.len();
+                SPINNER[frame].to_string()
+            } else {
+                "> ".to_string()
+            };
+            let prompt_width = display_width(&prompt);
+            let visible_width = cols.saturating_sub(prompt_width as u16) as usize;
+
+            let input_lines: SmallVec<[&str; 4]> = input_line.split('\n').collect();
+            for (i, line) in input_lines.iter().enumerate() {
+                let mut out = String::new();
+                if i == 0 {
+                    out.push_str(&format!(
+                        "{}{}",
+                        SetForegroundColor(self.color(Color::DarkYellow)),
+                        prompt
+                    ));
+                } else {
+                    out.push_str(&" ".repeat(prompt_width));
+                }
+                let visible = if line.chars().count() > visible_width {
+                    line.chars().take(visible_width).collect::<String>()
+                } else {
+                    line.to_string()
+                };
+                out.push_str(&visible);
+                lines.push(out);
+            }
+        }
+
+        // Separator below input.
+        lines.push(format!(
+            "{}{}",
+            SetForegroundColor(self.color(Color::DarkGrey)),
+            sep
+        ));
+
+        // Statusline rows.
+        let is_scrolling = self.scroll_offset > 0;
+        let h = self.statusline_height as usize;
+        for row_idx in 0..h {
+            let empty: Vec<StatusSpan> = Vec::new();
+            let spans = statusline.get(row_idx).unwrap_or(&empty);
+            let prefix = if is_scrolling && row_idx == 0 {
+                "-- SCROLL -- "
+            } else {
+                ""
+            };
+            lines.push(self.format_statusline_row(spans, prefix, cols));
+        }
+
+        lines
+    }
+
+    /// Format a statusline row as a plain string (no cursor movement).
+    fn format_statusline_row(&self, spans: &[StatusSpan], prefix: &str, cols: u16) -> String {
+        let mut out = String::new();
+        if let Some(bg) = self.status_bg {
+            let bg = self.color(bg);
+            out.push_str(&format!("{}", SetBackgroundColor(bg)));
+        }
+        let total = cols as usize;
+        let mut budget = total;
+
+        if !prefix.is_empty() {
+            let fg = self.color(Color::DarkYellow);
+            out.push_str(&format!("{}", SetForegroundColor(fg)));
+            let take = prefix.chars().take(budget).collect::<String>();
+            budget -= display_width(&take);
+            out.push_str(&take);
+        }
+
+        let fixed: usize = spans
+            .iter()
+            .map(|s| match s {
+                StatusSpan::Text { text, .. } => display_width(text),
+                StatusSpan::Flex => 0,
+            })
+            .sum();
+        let flex_count = spans
+            .iter()
+            .filter(|s| matches!(s, StatusSpan::Flex))
+            .count();
+        let mut flex_left = budget.saturating_sub(fixed);
+        let mut flex_seen = 0usize;
+
+        for span in spans {
+            if budget == 0 {
+                break;
+            }
+            match span {
+                StatusSpan::Text { text, fg, bg } => {
+                    let bgc = bg.or(self.status_bg);
+                    if let Some(c) = bgc {
+                        out.push_str(&format!("{}", SetBackgroundColor(self.color(c))));
+                    }
+                    let fgc = fg.unwrap_or(Color::DarkGrey);
+                    out.push_str(&format!("{}", SetForegroundColor(self.color(fgc))));
+                    let piece: String = text.chars().take(budget).collect();
+                    budget -= display_width(&piece);
+                    out.push_str(&piece);
+                }
+                StatusSpan::Flex => {
+                    flex_seen += 1;
+                    if flex_count == 0 {
+                        continue;
+                    }
+                    let base = flex_left / flex_count;
+                    let extra = if flex_seen <= flex_left % flex_count {
+                        1
+                    } else {
+                        0
+                    };
+                    let width = (base + extra).min(budget);
+                    flex_left = flex_left.saturating_sub(width);
+                    budget = budget.saturating_sub(width);
+                    out.push_str(&" ".repeat(width));
+                }
+            }
+        }
+        out.push_str(&format!("{}", ResetColor));
+        out
+    }
+
+    /// Compute the (row offset from the top of the bottom region, display column)
+    /// for the input caret in main-screen mode.
+    fn main_input_cursor_pos(
+        &self,
+        input_line: &str,
+        cursor_pos: usize,
+        bottom_lines: &[String],
+    ) -> Option<(usize, usize)> {
+        if self.permission_prompt.is_some() || self.chain_prompt.is_some() {
+            return None;
+        }
+        let (cursor_line, cursor_col) =
+            crate::ui::input::cursor_to_line_col(input_line, cursor_pos);
+        // Bottom layout: separator, input lines, separator, statusline.
+        let input_start_row = 1usize;
+        let row = input_start_row + cursor_line;
+        if row >= bottom_lines.len() {
+            return None;
+        }
+        let prompt = "> ";
+        let prompt_width = display_width(prompt);
+        let col = prompt_width + cursor_col;
+        Some((row, col))
     }
 }
 
