@@ -347,12 +347,10 @@ mod main_screen {
     }
 
     #[test]
-    fn appends_chat_lines_to_scrollback() {
+    fn renders_chat_lines_on_main_buffer() {
         let mut r = make_renderer();
         r.write_line("hello world", crossterm::style::Color::White)
             .unwrap();
-        // In main-screen mode `write_line` only updates state; the actual
-        // output is produced by `draw_bottom`, which renders the unified stream.
         r.draw_bottom("", 0, &statusline(), false).unwrap();
         let out = r.captured_output();
         assert!(
@@ -371,11 +369,8 @@ mod main_screen {
         let mut r = make_renderer();
         r.draw_bottom("hi", 2, &statusline(), false).unwrap();
         let out = r.captured_output();
-        assert!(
-            out.contains("> hi"),
-            "expected input prompt, got: {:?}",
-            out
-        );
+        assert!(out.contains("> "), "expected input prompt, got: {:?}", out);
+        assert!(out.contains("hi"), "expected input text, got: {:?}", out);
         assert!(
             out.contains("status"),
             "expected statusline, got: {:?}",
@@ -387,18 +382,16 @@ mod main_screen {
     fn input_change_rewrites_bottom_in_place() {
         let mut r = make_renderer();
         r.draw_bottom("a", 1, &statusline(), false).unwrap();
-        let first = r.captured_output();
+        let _first = r.captured_output();
         r.draw_bottom("ab", 2, &statusline(), false).unwrap();
         let second = r.captured_output();
-        // The second draw should move the cursor up and rewrite the bottom
+        // The second draw should move the cursor and rewrite the bottom
         // region instead of appending new scrollback lines.
         assert!(
             second.contains("\x1b["),
             "expected cursor movement on rewrite, got: {:?}",
             second
         );
-        // A rewrite contains a cursor-up sequence (e.g. \x1b[4A) followed by
-        // line clears (\x1b[2K). Appending would not produce these.
         assert!(
             second.contains("\x1b[2K"),
             "expected line clears on rewrite, got: {:?}",
@@ -407,19 +400,28 @@ mod main_screen {
     }
 
     #[test]
-    fn bottom_chrome_is_last_in_unified_stream() {
+    fn bottom_chrome_is_positioned_at_bottom_rows() {
         let mut r = make_renderer();
         r.write_line("chat line", crossterm::style::Color::White)
             .unwrap();
         r.draw_bottom("input", 5, &statusline(), false).unwrap();
         let out = r.captured_output();
-        let chat_pos = out.find("chat line").expect("chat line missing");
-        let input_pos = out.find("> input").expect("input prompt missing");
-        let status_pos = out.find("status").expect("statusline missing");
+        // On a 24-row terminal the input line sits at row 22 and the
+        // statusline at row 24; verify absolute positioning is used.
         assert!(
-            chat_pos < input_pos && input_pos < status_pos,
-            "expected order: chat < input < status, got positions {:?}",
-            (chat_pos, input_pos, status_pos)
+            out.contains("\x1b[22;1H"),
+            "expected input row MoveTo, got: {:?}",
+            out
+        );
+        assert!(
+            out.contains("\x1b[24;1H"),
+            "expected statusline row MoveTo, got: {:?}",
+            out
+        );
+        assert!(
+            out.contains("chat line"),
+            "expected chat content, got: {:?}",
+            out
         );
     }
 }

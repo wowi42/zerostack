@@ -1,6 +1,7 @@
 use std::io::Write;
 
 use crossterm::ExecutableCommand;
+use crossterm::cursor::MoveTo;
 use crossterm::event::{
     DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
     KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
@@ -18,6 +19,12 @@ impl TerminalGuard {
         if alternate_screen {
             stdout.execute(EnterAlternateScreen)?;
             stdout.execute(Clear(ClearType::All))?;
+        } else {
+            // Main-screen mode: paint the TUI frame directly on the terminal's
+            // normal scrollback buffer. Clear the visible screen first so any
+            // previous shell output is not mixed with the frame.
+            stdout.execute(Clear(ClearType::All))?;
+            stdout.execute(MoveTo(0, 0))?;
         }
         // When not using the alternate screen we want native terminal mouse
         // selection/scrollback, so leave mouse capture disabled.
@@ -51,7 +58,7 @@ impl Drop for TerminalGuard {
         } else {
             // Back in the main buffer: leave the rendered content in scrollback.
             // Print a newline so the shell prompt appears below the bottom region.
-            let _ = write!(stdout, "\n");
+            let _ = writeln!(stdout);
         }
         let _ = stdout.flush();
     }
