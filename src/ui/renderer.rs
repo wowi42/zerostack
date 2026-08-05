@@ -256,12 +256,12 @@ pub struct Renderer {
     /// Current rendering mode.
     mode: RenderMode,
     // --- Main-screen state ---
-    /// Chat content lines already emitted to the terminal scrollback.
-    main_content_lines: Vec<String>,
-    /// Last set of lines rendered for the bottom region (input + statusline).
-    main_bottom_lines: Vec<String>,
-    /// Whether new content has been emitted since the last bottom draw.
-    main_content_changed: bool,
+    /// The full set of lines (chat content + input + statusline) currently
+    /// emitted to the terminal scrollback. Used for differential rendering.
+    main_lines: Vec<String>,
+    /// Terminal width from the last main-screen render. Used to detect width
+    /// changes, which require a full re-render because wrapping changes.
+    main_prev_cols: u16,
 }
 
 impl Renderer {
@@ -309,9 +309,8 @@ impl Renderer {
             bottom_cursor: None,
             full_redraw: false,
             mode: RenderMode::AlternateScreen,
-            main_content_lines: Vec::new(),
-            main_bottom_lines: Vec::new(),
-            main_content_changed: false,
+            main_lines: Vec::new(),
+            main_prev_cols: 0,
         }
     }
 
@@ -511,6 +510,12 @@ impl Renderer {
     /// is about to use. Without this, a height change (e.g. clearing or pasting
     /// text) leaves the viewport drawn for the old size until the next redraw.
     pub fn sync_input_height(&mut self, input_line: &str) -> io::Result<()> {
+        if self.mode == RenderMode::MainScreen {
+            // Main-screen mode renders the input area as part of the unified
+            // scrollback stream; there is no fixed bottom region to reconcile.
+            self.prev_input_height = self.input_visible_height(input_line, self.terminal_size().1);
+            return Ok(());
+        }
         let (_, rows) = self.terminal_size();
         let new_height = self.input_visible_height(input_line, rows);
         self.clear_shrunk_rows(self.prev_input_height, new_height)?;
@@ -905,9 +910,7 @@ impl Renderer {
             self.partial.clear();
             self.scroll_offset = 0;
             self.clear_selection();
-            self.main_content_lines.clear();
-            self.main_bottom_lines.clear();
-            self.main_content_changed = false;
+            self.main_lines.clear();
             // Print a visible separator so the user sees the boundary.
             let cols = self.terminal_size().0;
             let sep: String = "─".repeat(cols as usize);
@@ -1496,60 +1499,13 @@ impl Renderer {
     // Main-screen rendering path
     // ------------------------------------------------------------------
 
-    /// Render chat content in main-screen mode: only new lines are appended to
-    /// the terminal scrollback. Old lines are never rewritten.
+    /// In main-screen mode `render_viewport` only updates state; the actual
+    /// output happens in `draw_bottom_main`, which renders the unified line
+    /// stream (chat content + input + statusline) so the bottom chrome stays
+    /// at the end of the buffer and is visible when the stream fills the screen.
     fn render_viewport_main(&mut self) -> io::Result<()> {
-        if !self.chat_dirty && !self.main_content_lines.is_empty() {
-            return Ok(());
-        }
-        let width = self.max_line_width();
-        let new_lines: Vec<String> = self
-            .chat_lines(width)
-            .iter()
-            .map(|entry| self.format_line_entry(entry))
-            .collect();
-
-        if new_lines.is_empty() && self.main_content_lines.is_empty() {
-            return Ok(());
-        }
-
-        // Find common prefix with previously emitted content.
-        let mut common = self
-            .main_content_lines
-            .iter()
-            .zip(new_lines.iter())
-            .take_while(|(a, b)| a == b)
-            .count();
-
-        // Content shrunk (e.g. clear). We cannot delete scrollback lines, so
-        // print a separator and start fresh from here.
-        if new_lines.len() < self.main_content_lines.len() {
-            let cols = self.terminal_size().0;
-            let sep: String = "─".repeat(cols as usize);
-            write!(self.backend, "\n{}", sep)?;
-            self.main_content_lines.clear();
-            common = 0;
-        }
-
-        // Append new lines.
-        let prefix_len = self.main_content_lines.len();
-        for (i, line) in new_lines.iter().enumerate().skip(common) {
-            if i > prefix_len {
-                // We're emitting lines after the previously known content but
-                // before the previous bottom region. Insert a newline to push
-                // the old bottom down; it will be overwritten by draw_bottom.
-                write!(self.backend, "\n")?;
-            } else if !self.main_content_lines.is_empty() || i > 0 {
-                write!(self.backend, "\n")?;
-            }
-            write!(self.backend, "{}", line)?;
-        }
-
-        self.main_content_lines = new_lines;
-        self.main_content_changed = true;
-        self.chat_dirty = false;
-        self.record_chat_drawn();
-        self.backend.flush()
+        self.chat_dirty = true;
+        Ok(())
     }
 
     /// Format a single chat line with foreground color and optional chat background.
@@ -1557,7 +1513,7 @@ impl Renderer {
         let mut out = String::new();
         if let Some(bg) = self.chat_bg {
             let bg = self.color(bg);
-            out.push_str(&format!("{}\u{1b}[{}K", SetBackgroundColor(bg), 0));
+            out.push_str(&format!("{}", SetBackgroundColor(bg)));
         }
         if self.chat_margin > 0 {
             out.push_str(&" ".repeat(self.chat_margin as usize));
@@ -1569,8 +1525,10 @@ impl Renderer {
         out
     }
 
-    /// Render the input area and statusline as ordinary lines at the bottom of
-    /// the flow. When only the bottom region changed, rewrite it in place.
+    /// Render the full UI as a single line stream in the terminal's main buffer.
+    /// Chat content comes first, then the input area and statusline. Because the
+    /// bottom chrome is the last part of the stream, the terminal's natural
+    /// bottom-of-buffer viewport keeps it visible once content fills the screen.
     fn draw_bottom_main(
         &mut self,
         input_line: &str,
@@ -1579,46 +1537,80 @@ impl Renderer {
         is_running: bool,
     ) -> io::Result<()> {
         let (cols, _rows) = self.backend.size()?;
-        let new_bottom =
+        let width = cols.saturating_sub(1 + self.chat_margin) as usize;
+        let content_lines: Vec<String> = self
+            .chat_lines(width)
+            .iter()
+            .map(|entry| self.format_line_entry(entry))
+            .collect();
+        let bottom_lines =
             self.format_bottom_lines(input_line, cursor_pos, statusline, is_running, cols);
 
-        if !self.main_content_changed && !self.main_bottom_lines.is_empty() {
-            // Rewrite the bottom region in place.
-            let old_count = self.main_bottom_lines.len();
-            write!(self.backend, "\x1b[{}A", old_count)?;
-            for (i, line) in new_bottom.iter().enumerate() {
-                if i > 0 {
-                    write!(self.backend, "\n")?;
-                }
-                write!(self.backend, "\r\x1b[2K{}", line)?;
+        let new_lines: Vec<String> = content_lines
+            .iter()
+            .cloned()
+            .chain(bottom_lines.iter().cloned())
+            .collect();
+
+        let width_changed = self.main_prev_cols != 0 && self.main_prev_cols != cols;
+        let is_first = self.main_lines.is_empty();
+
+        if is_first || width_changed {
+            // First render after startup/clear, or terminal width changed:
+            // emit the whole stream. For a width change, prepend a separator so
+            // the user sees where the old scrollback ends and the re-wrapped
+            // output begins.
+            if width_changed {
+                write!(self.backend, "\n\x1b[2K---")?;
             }
-        } else {
-            // Content changed: print bottom below the new content.
-            for (i, line) in new_bottom.iter().enumerate() {
-                if !self.main_content_lines.is_empty()
-                    || i > 0
-                    || !self.main_bottom_lines.is_empty()
-                {
+            for (i, line) in new_lines.iter().enumerate() {
+                if i > 0 || width_changed {
                     write!(self.backend, "\n")?;
                 }
                 write!(self.backend, "{}", line)?;
             }
+        } else {
+            // Differential update: rewrite only from the first changed line.
+            let first_changed = self
+                .main_lines
+                .iter()
+                .zip(new_lines.iter())
+                .position(|(a, b)| a != b)
+                .unwrap_or(self.main_lines.len());
+
+            if first_changed == self.main_lines.len() && new_lines.len() == self.main_lines.len() {
+                // Nothing changed.
+            } else {
+                let up = self.main_lines.len().saturating_sub(first_changed + 1);
+                if up > 0 {
+                    write!(self.backend, "\x1b[{}A", up)?;
+                }
+                write!(self.backend, "\r")?;
+                for i in first_changed..new_lines.len() {
+                    if i > first_changed {
+                        write!(self.backend, "\n")?;
+                    }
+                    write!(self.backend, "\x1b[2K{}", new_lines[i])?;
+                }
+            }
         }
 
         // Position hardware cursor inside the input line.
-        if let Some((cursor_row_offset, cursor_col)) =
-            self.main_input_cursor_pos(input_line, cursor_pos, &new_bottom)
+        if let Some((cursor_row, cursor_col)) =
+            self.main_input_cursor_pos(input_line, cursor_pos, &bottom_lines)
         {
-            let up = new_bottom.len().saturating_sub(cursor_row_offset + 1);
+            let up = bottom_lines.len().saturating_sub(cursor_row + 1);
             if up > 0 {
                 write!(self.backend, "\x1b[{}A", up)?;
             }
             write!(self.backend, "\r\x1b[{}G", cursor_col + 1)?;
         }
 
-        self.main_bottom_lines = new_bottom;
-        self.main_content_changed = false;
+        self.main_lines = new_lines;
+        self.main_prev_cols = cols;
+        self.chat_dirty = false;
         self.bottom_dirty = false;
+        self.record_chat_drawn();
         self.backend.flush()
     }
 
@@ -1782,8 +1774,8 @@ impl Renderer {
         out
     }
 
-    /// Compute the (row offset from the top of the bottom region, display column)
-    /// for the input caret in main-screen mode.
+    /// Compute the (row offset inside the bottom region, display column) for the
+    /// input caret in main-screen mode.
     fn main_input_cursor_pos(
         &self,
         input_line: &str,

@@ -351,6 +351,9 @@ mod main_screen {
         let mut r = make_renderer();
         r.write_line("hello world", crossterm::style::Color::White)
             .unwrap();
+        // In main-screen mode `write_line` only updates state; the actual
+        // output is produced by `draw_bottom`, which renders the unified stream.
+        r.draw_bottom("", 0, &statusline(), false).unwrap();
         let out = r.captured_output();
         assert!(
             out.contains("hello world"),
@@ -401,16 +404,22 @@ mod main_screen {
             "expected line clears on rewrite, got: {:?}",
             second
         );
-        let first_newlines = first.matches('\n').count();
-        let second_newlines = second.matches('\n').count();
-        // Rewrite adds at most one extra newline compared to the original draw
-        // because it overwrites existing bottom lines rather than pushing them
-        // into scrollback.
+    }
+
+    #[test]
+    fn bottom_chrome_is_last_in_unified_stream() {
+        let mut r = make_renderer();
+        r.write_line("chat line", crossterm::style::Color::White)
+            .unwrap();
+        r.draw_bottom("input", 5, &statusline(), false).unwrap();
+        let out = r.captured_output();
+        let chat_pos = out.find("chat line").expect("chat line missing");
+        let input_pos = out.find("> input").expect("input prompt missing");
+        let status_pos = out.find("status").expect("statusline missing");
         assert!(
-            second_newlines <= first_newlines + 3,
-            "rewrite added too many newlines: first={} second={}",
-            first_newlines,
-            second_newlines
+            chat_pos < input_pos && input_pos < status_pos,
+            "expected order: chat < input < status, got positions {:?}",
+            (chat_pos, input_pos, status_pos)
         );
     }
 }
