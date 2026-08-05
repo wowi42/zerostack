@@ -450,7 +450,7 @@ pub async fn handle_slash(
             Ok(())
         }
         "/tutor" => {
-            help::handle_tutor(ctx.renderer);
+            help::handle_tutor(ctx.renderer, ctx.cfg.resolve_alternate_screen());
             Ok(())
         }
         "/add" | "/drop" | "/drop-all" => add::handle(&parts, &mut ctx).await,

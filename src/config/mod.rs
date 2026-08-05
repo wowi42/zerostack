@@ -146,6 +146,12 @@ pub struct Config {
     /// Left padding (columns) for the chat area. Default: 0.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chat_left_margin: Option<u16>,
+    /// Use the terminal's alternate screen for the TUI. Default: true.
+    /// Disabling this enables native terminal scrollback and selection, but
+    /// the status bar and input area will not stay fixed when the terminal
+    /// scrolls. Experimental.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alternate_screen: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_prompt: Option<CompactString>,
     #[cfg(feature = "git-worktree")]
@@ -316,6 +322,10 @@ impl Config {
 
     pub fn resolve_chat_left_margin(&self) -> u16 {
         self.chat_left_margin.unwrap_or(0)
+    }
+
+    pub fn resolve_alternate_screen(&self) -> bool {
+        self.alternate_screen.unwrap_or(true)
     }
 
     /// Resolves temperature: CLI `--temperature` > quick-model `temperature` >
@@ -632,5 +642,36 @@ code = "deepseek-v4-pro"
     fn default_config_has_no_prompt_to_model() {
         let cfg = Config::default();
         assert_eq!(cfg.resolve_prompt_model("plan"), None);
+    }
+
+    #[test]
+    fn resolve_alternate_screen_defaults_to_true() {
+        let cfg = Config::default();
+        assert!(cfg.resolve_alternate_screen());
+    }
+
+    #[test]
+    fn resolve_alternate_screen_reads_config_value() {
+        let cfg = Config {
+            alternate_screen: Some(false),
+            ..Default::default()
+        };
+        assert!(!cfg.resolve_alternate_screen());
+
+        let cfg = Config {
+            alternate_screen: Some(true),
+            ..Default::default()
+        };
+        assert!(cfg.resolve_alternate_screen());
+    }
+
+    #[test]
+    fn toml_deserializes_alternate_screen() {
+        let toml_str = r#"
+alternate_screen = false
+"#;
+        let cfg: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.alternate_screen, Some(false));
+        assert!(!cfg.resolve_alternate_screen());
     }
 }

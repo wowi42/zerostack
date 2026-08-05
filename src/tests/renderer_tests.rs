@@ -326,3 +326,102 @@ mod dirty {
         );
     }
 }
+
+mod main_screen {
+    use crate::ui::renderer::{FakeBackend, RenderMode, Renderer};
+    use crate::ui::statusline::StatusSpan;
+
+    fn make_renderer() -> Renderer {
+        let mut r = Renderer::with_backend(Box::new(FakeBackend::new(80, 24)));
+        r.set_mode(RenderMode::MainScreen);
+        r.set_statusline_height(1);
+        r
+    }
+
+    fn statusline() -> Vec<Vec<StatusSpan>> {
+        vec![vec![StatusSpan::Text {
+            text: "status".to_string(),
+            fg: None,
+            bg: None,
+        }]]
+    }
+
+    #[test]
+    fn renders_chat_lines_on_main_buffer() {
+        let mut r = make_renderer();
+        r.write_line("hello world", crossterm::style::Color::White)
+            .unwrap();
+        r.draw_bottom("", 0, &statusline(), false).unwrap();
+        let out = r.captured_output();
+        assert!(
+            out.contains("hello world"),
+            "expected output to contain chat line, got: {:?}",
+            out
+        );
+        assert!(
+            !out.contains("\x1b[2J"),
+            "main-screen renderer should not clear the screen"
+        );
+    }
+
+    #[test]
+    fn draw_bottom_renders_input_and_status() {
+        let mut r = make_renderer();
+        r.draw_bottom("hi", 2, &statusline(), false).unwrap();
+        let out = r.captured_output();
+        assert!(out.contains("> "), "expected input prompt, got: {:?}", out);
+        assert!(out.contains("hi"), "expected input text, got: {:?}", out);
+        assert!(
+            out.contains("status"),
+            "expected statusline, got: {:?}",
+            out
+        );
+    }
+
+    #[test]
+    fn input_change_rewrites_bottom_in_place() {
+        let mut r = make_renderer();
+        r.draw_bottom("a", 1, &statusline(), false).unwrap();
+        let _first = r.captured_output();
+        r.draw_bottom("ab", 2, &statusline(), false).unwrap();
+        let second = r.captured_output();
+        // The second draw should move the cursor and rewrite the bottom
+        // region instead of appending new scrollback lines.
+        assert!(
+            second.contains("\x1b["),
+            "expected cursor movement on rewrite, got: {:?}",
+            second
+        );
+        assert!(
+            second.contains("\x1b[2K"),
+            "expected line clears on rewrite, got: {:?}",
+            second
+        );
+    }
+
+    #[test]
+    fn bottom_chrome_is_positioned_at_bottom_rows() {
+        let mut r = make_renderer();
+        r.write_line("chat line", crossterm::style::Color::White)
+            .unwrap();
+        r.draw_bottom("input", 5, &statusline(), false).unwrap();
+        let out = r.captured_output();
+        // On a 24-row terminal the input line sits at row 22 and the
+        // statusline at row 24; verify absolute positioning is used.
+        assert!(
+            out.contains("\x1b[22;1H"),
+            "expected input row MoveTo, got: {:?}",
+            out
+        );
+        assert!(
+            out.contains("\x1b[24;1H"),
+            "expected statusline row MoveTo, got: {:?}",
+            out
+        );
+        assert!(
+            out.contains("chat line"),
+            "expected chat content, got: {:?}",
+            out
+        );
+    }
+}

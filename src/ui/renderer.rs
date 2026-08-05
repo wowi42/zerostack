@@ -16,6 +16,15 @@ use super::markdown::word_wrap;
 use super::statusline::StatusSpan;
 use super::utils::{char_display_width, display_width, resolve_color};
 
+/// Rendering mode: alternate screen keeps a fixed fullscreen UI; main screen
+/// renders into the terminal's normal scrollback so native scroll/selection work.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum RenderMode {
+    #[default]
+    AlternateScreen,
+    MainScreen,
+}
+
 /// Terminal output sink for [`Renderer`]: every ANSI write and terminal-size
 /// read goes through this trait. Production uses [`CrosstermBackend`] (stdout
 /// plus the real terminal size); tests swap in [`FakeBackend`] to capture the
@@ -232,9 +241,15 @@ pub struct Renderer {
     last_chat_snapshot: Option<ChatSnapshot>,
     bottom_dirty: bool,
     last_bottom_snapshot: Option<BottomSnapshot>,
+    /// When true, skip dirty-region optimization and clear/redraw the whole
+    /// screen every frame. Used when running in the main terminal buffer
+    /// instead of the alternate screen.
+    full_redraw: bool,
     /// Screen position of the input caret after the last full bottom draw;
     /// `None` when the caret is hidden (permission/chain prompts).
     bottom_cursor: Option<(u16, u16)>,
+    /// Current rendering mode.
+    mode: RenderMode,
 }
 
 impl Renderer {
@@ -280,7 +295,14 @@ impl Renderer {
             bottom_dirty: true,
             last_bottom_snapshot: None,
             bottom_cursor: None,
+            full_redraw: false,
+            mode: RenderMode::AlternateScreen,
         }
+    }
+
+    /// Set the rendering mode. Must be called before the first frame.
+    pub fn set_mode(&mut self, mode: RenderMode) {
+        self.mode = mode;
     }
 
     /// Queue a crossterm command to the backend and flush, mirroring
@@ -397,7 +419,7 @@ impl Renderer {
     /// recorded draw. The state comparison also catches feed mutations made
     /// through `feed_mut()` and direct writes to the public selection fields.
     pub fn chat_needs_redraw(&self) -> bool {
-        if self.chat_dirty {
+        if self.chat_dirty || self.full_redraw {
             return true;
         }
         match &self.last_chat_snapshot {
@@ -695,6 +717,9 @@ impl Renderer {
         if !self.chat_needs_redraw() {
             return Ok(());
         }
+        if self.full_redraw {
+            self.exec(Clear(ClearType::All))?;
+        }
         let (cols, _rows) = self.terminal_size();
         let max_width = cols.saturating_sub(1 + self.chat_margin) as usize;
         let visible = self.visible_lines();
@@ -848,6 +873,16 @@ impl Renderer {
         self.partial.clear();
         self.scroll_offset = 0;
         self.clear_selection();
+        if self.mode == RenderMode::MainScreen {
+            // Print a visible separator so the user sees the boundary in the
+            // terminal's normal scrollback buffer.
+            let cols = self.terminal_size().0;
+            let sep: String = "─".repeat(cols as usize);
+            writeln!(self.backend)?;
+            write!(self.backend, "{}", sep)?;
+            self.backend.flush()?;
+            return Ok(());
+        }
         if let Some(bg) = self.chat_bg {
             let bg = self.color(bg);
             write!(self.backend, "{}", SetBackgroundColor(bg))?;
@@ -1125,7 +1160,7 @@ impl Renderer {
         match Self::bottom_redraw_plan(
             self.last_bottom_snapshot.as_ref(),
             &snapshot,
-            self.bottom_dirty,
+            self.bottom_dirty || self.full_redraw,
         ) {
             BottomRedrawPlan::Skip => return Ok(()),
             BottomRedrawPlan::StatuslineOnly => {
@@ -1171,7 +1206,7 @@ impl Renderer {
                 write!(self.backend, "{}", ResetColor)?;
             }
 
-            let sep_below = rows.saturating_sub(reserve - 1);
+            let sep_below = rows.saturating_sub(reserve.saturating_sub(1));
             if sep_below < rows.saturating_sub(1) {
                 self.draw_separator(sep_below, cols)?;
             }
@@ -1221,7 +1256,7 @@ impl Renderer {
                 write!(self.backend, "{}", ResetColor)?;
             }
 
-            let sep_below = rows.saturating_sub(reserve - 1);
+            let sep_below = rows.saturating_sub(reserve.saturating_sub(1));
             if sep_below < rows.saturating_sub(1) {
                 self.draw_separator(sep_below, cols)?;
             }
@@ -1340,7 +1375,10 @@ impl Renderer {
             .skip(first_visible)
             .take(visible_line_count)
         {
-            let render_row = (rows.saturating_sub(reserve) - visible_line_count as u16 + 1)
+            let render_row = rows
+                .saturating_sub(reserve)
+                .saturating_sub(visible_line_count as u16)
+                .saturating_add(1)
                 + (i - first_visible) as u16;
             self.exec(MoveTo(0, render_row))?;
 
@@ -1386,7 +1424,7 @@ impl Renderer {
         }
 
         // Thin separator line below input
-        let sep_below = rows.saturating_sub(reserve - 1);
+        let sep_below = rows.saturating_sub(reserve.saturating_sub(1));
         if sep_below < rows.saturating_sub(1) {
             self.draw_separator(sep_below, cols)?;
         }
@@ -1400,7 +1438,10 @@ impl Renderer {
         let cursor_render_idx = cursor_line
             .saturating_sub(first_visible)
             .min(visible_line_count.saturating_sub(1));
-        let cursor_row = (rows.saturating_sub(reserve) - visible_line_count as u16 + 1)
+        let cursor_row = rows
+            .saturating_sub(reserve)
+            .saturating_sub(visible_line_count as u16)
+            .saturating_add(1)
             + cursor_render_idx as u16;
         let cursor_x = (prompt_width + cursor_display_col.saturating_sub(h_scroll)) as u16;
         self.exec(MoveTo(cursor_x, cursor_row))?;

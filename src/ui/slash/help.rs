@@ -8,8 +8,8 @@ pub fn handle_welcome(renderer: &mut crate::ui::renderer::Renderer) {
     let _ = crate::ui::events::show_welcome(renderer);
 }
 
-pub fn handle_tutor(renderer: &mut crate::ui::renderer::Renderer) {
-    match run_tutor() {
+pub fn handle_tutor(renderer: &mut crate::ui::renderer::Renderer, alternate_screen: bool) {
+    match run_tutor(alternate_screen) {
         Ok(()) => {}
         Err(e) => {
             let _ = renderer.write_line(&format!("{}", e), crate::ui::slash::C_ERROR);
@@ -17,20 +17,24 @@ pub fn handle_tutor(renderer: &mut crate::ui::renderer::Renderer) {
     }
 }
 
-fn run_tutor() -> anyhow::Result<()> {
+fn run_tutor(alternate_screen: bool) -> anyhow::Result<()> {
     let _ = crossterm::terminal::disable_raw_mode();
     let mut stdout = std::io::stdout();
-    let _ = stdout.execute(crossterm::event::DisableMouseCapture);
-    let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
+    if alternate_screen {
+        let _ = stdout.execute(crossterm::event::DisableMouseCapture);
+        let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
+    }
     let _ = stdout.flush();
 
     let result = crate::docs::show_get_started();
 
-    let _ = stdout.execute(crossterm::terminal::EnterAlternateScreen);
-    let _ = stdout.execute(crossterm::terminal::Clear(
-        crossterm::terminal::ClearType::All,
-    ));
-    let _ = stdout.execute(crossterm::event::EnableMouseCapture);
+    if alternate_screen {
+        let _ = stdout.execute(crossterm::terminal::EnterAlternateScreen);
+        let _ = stdout.execute(crossterm::terminal::Clear(
+            crossterm::terminal::ClearType::All,
+        ));
+        let _ = stdout.execute(crossterm::event::EnableMouseCapture);
+    }
     let _ = crossterm::terminal::enable_raw_mode();
 
     result
@@ -305,4 +309,8 @@ pub fn handle(_parts: &[&str], ctx: &mut SlashCtx<'_>) {
     write_result(ctx.renderer, "  Ctrl+R                 toggle reasoning");
     write_result(ctx.renderer, "  Ctrl+C / Ctrl+D        interrupt/quit");
     write_result(ctx.renderer, "  mouse scroll           scroll chat");
+    write_result(
+        ctx.renderer,
+        "  config: alternate_screen=false  native scroll/selection (experimental)",
+    );
 }
